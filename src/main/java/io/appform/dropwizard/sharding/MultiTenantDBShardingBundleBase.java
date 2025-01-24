@@ -203,19 +203,22 @@ public abstract class MultiTenantDBShardingBundleBase<T extends Configuration> e
 
   public <EntityType, T extends Configuration>
   MultiTenantLookupDao<EntityType> createParentObjectDao(Class<EntityType> clazz) {
-    return new MultiTenantLookupDao<>(this.sessionFactories, clazz,
+    val dao = new MultiTenantLookupDao<>(this.sessionFactories, clazz,
         new ShardCalculator<>(this.shardManagers,
             new MultiTenantConsistentHashBucketIdExtractor<>(this.shardManagers)),
         this.shardingOptions,
         shardInfoProviders,
         rootObserver);
 
+    getEntityBucketExtractorMappings().put(clazz,
+            new MultiTenantConsistentHashBucketIdExtractor<>(this.shardManagers));
+    return dao;
   }
 
   public <EntityType, T extends Configuration>
   MultiTenantCacheableLookupDao<EntityType> createParentObjectDao(Class<EntityType> clazz,
       Map<String, LookupCache<EntityType>> cacheManager) {
-    return new MultiTenantCacheableLookupDao<>(this.sessionFactories,
+    val dao = new MultiTenantCacheableLookupDao<>(this.sessionFactories,
         clazz,
         new ShardCalculator<>(this.shardManagers,
             new MultiTenantConsistentHashBucketIdExtractor<>(this.shardManagers)),
@@ -223,18 +226,25 @@ public abstract class MultiTenantDBShardingBundleBase<T extends Configuration> e
         this.shardingOptions,
         shardInfoProviders,
         rootObserver);
+
+    getEntityBucketExtractorMappings().put(clazz,
+            new MultiTenantConsistentHashBucketIdExtractor<>(this.shardManagers));
+    return dao;
   }
 
   public <EntityType, T extends Configuration>
   MultiTenantLookupDao<EntityType> createParentObjectDao(
       Class<EntityType> clazz,
       BucketIdExtractor<String> bucketIdExtractor) {
-    return new MultiTenantLookupDao<>(this.sessionFactories,
+    val dao =  new MultiTenantLookupDao<>(this.sessionFactories,
         clazz,
         new ShardCalculator<>(this.shardManagers, bucketIdExtractor),
         this.shardingOptions,
         shardInfoProviders,
         rootObserver);
+
+    getEntityBucketExtractorMappings().put(clazz, bucketIdExtractor);
+    return dao;
   }
 
   public <EntityType, T extends Configuration>
@@ -242,31 +252,35 @@ public abstract class MultiTenantDBShardingBundleBase<T extends Configuration> e
       Class<EntityType> clazz,
       BucketIdExtractor<String> bucketIdExtractor,
       Map<String, LookupCache<EntityType>> cacheManager) {
-    return new MultiTenantCacheableLookupDao<>(this.sessionFactories,
+    val dao = new MultiTenantCacheableLookupDao<>(this.sessionFactories,
         clazz,
         new ShardCalculator<>(this.shardManagers, bucketIdExtractor),
         cacheManager,
         this.shardingOptions,
         shardInfoProviders,
         rootObserver);
+    getEntityBucketExtractorMappings().put(clazz, bucketIdExtractor);
+    return dao;
   }
 
 
   public <EntityType, T extends Configuration>
   MultiTenantRelationalDao<EntityType> createRelatedObjectDao(Class<EntityType> clazz) {
-    return new MultiTenantRelationalDao<>(this.sessionFactories, clazz,
+    val dao = new MultiTenantRelationalDao<>(this.sessionFactories, clazz,
         new ShardCalculator<>(this.shardManagers,
             new ConsistentHashBucketIdExtractor<>(this.shardManagers)),
         this.shardingOptions,
         shardInfoProviders,
         rootObserver);
+    getEntityBucketExtractorMappings().put(clazz, new ConsistentHashBucketIdExtractor<>(this.shardManagers));
+    return dao;
   }
 
 
   public <EntityType, T extends Configuration>
   MultiTenantCacheableRelationalDao<EntityType> createRelatedObjectDao(Class<EntityType> clazz,
       Map<String, RelationalCache<EntityType>> cacheManager) {
-    return new MultiTenantCacheableRelationalDao<>(this.sessionFactories,
+    val dao = new MultiTenantCacheableRelationalDao<>(this.sessionFactories,
         clazz,
         new ShardCalculator<>(this.shardManagers,
             new ConsistentHashBucketIdExtractor<>(this.shardManagers)),
@@ -274,30 +288,36 @@ public abstract class MultiTenantDBShardingBundleBase<T extends Configuration> e
         this.shardingOptions,
         shardInfoProviders,
         rootObserver);
+    getEntityBucketExtractorMappings().put(clazz, new ConsistentHashBucketIdExtractor<>(this.shardManagers));
+    return dao;
   }
 
   public <EntityType, T extends Configuration>
   MultiTenantRelationalDao<EntityType> createRelatedObjectDao(Class<EntityType> clazz,
       BucketIdExtractor<String> bucketIdExtractor) {
-    return new MultiTenantRelationalDao<>(this.sessionFactories,
+    val dao = new MultiTenantRelationalDao<>(this.sessionFactories,
         clazz,
         new ShardCalculator<>(this.shardManagers, bucketIdExtractor),
         this.shardingOptions,
         shardInfoProviders,
         rootObserver);
+    getEntityBucketExtractorMappings().put(clazz, bucketIdExtractor);
+    return dao;
   }
 
   public <EntityType, T extends Configuration>
   MultiTenantCacheableRelationalDao<EntityType> createRelatedObjectDao(Class<EntityType> clazz,
       BucketIdExtractor<String> bucketIdExtractor,
       Map<String, RelationalCache<EntityType>> cacheManager) {
-    return new MultiTenantCacheableRelationalDao<>(this.sessionFactories,
+    val dao = new MultiTenantCacheableRelationalDao<>(this.sessionFactories,
         clazz,
         new ShardCalculator<>(this.shardManagers, bucketIdExtractor),
         cacheManager,
         this.shardingOptions,
         shardInfoProviders,
         rootObserver);
+    getEntityBucketExtractorMappings().put(clazz, bucketIdExtractor);
+    return dao;
   }
 
 
@@ -305,10 +325,13 @@ public abstract class MultiTenantDBShardingBundleBase<T extends Configuration> e
   WrapperDao<EntityType, DaoType> createWrapperDao(String tenantId, Class<DaoType> daoTypeClass) {
     Preconditions.checkArgument(this.sessionFactories.containsKey(tenantId),
         "Unknown tenant: " + tenantId);
-    return new WrapperDao<>(tenantId, this.sessionFactories.get(tenantId),
+    val dao = new WrapperDao<>(tenantId, this.sessionFactories.get(tenantId),
         daoTypeClass,
         new ShardCalculator<>(this.shardManagers,
             new ConsistentHashBucketIdExtractor<>(this.shardManagers)));
+    getEntityBucketExtractorMappings().put(daoTypeClass,
+            new ConsistentHashBucketIdExtractor<>(this.shardManagers));
+    return dao;
   }
 
   public <EntityType, DaoType extends AbstractDAO<EntityType>, T extends Configuration>
@@ -317,9 +340,11 @@ public abstract class MultiTenantDBShardingBundleBase<T extends Configuration> e
       BucketIdExtractor<String> bucketIdExtractor) {
     Preconditions.checkArgument(this.sessionFactories.containsKey(tenantId),
         "Unknown tenant: " + tenantId);
-    return new WrapperDao<>(tenantId, this.sessionFactories.get(tenantId),
+    val dao = new WrapperDao<>(tenantId, this.sessionFactories.get(tenantId),
         daoTypeClass,
         new ShardCalculator<>(this.shardManagers, bucketIdExtractor));
+    getEntityBucketExtractorMappings().put(daoTypeClass, bucketIdExtractor);
+    return dao;
   }
 
   public <EntityType, DaoType extends AbstractDAO<EntityType>, T extends Configuration>
@@ -329,9 +354,12 @@ public abstract class MultiTenantDBShardingBundleBase<T extends Configuration> e
       Class[] extraConstructorParamObjects) {
     Preconditions.checkArgument(this.sessionFactories.containsKey(tenantId),
         "Unknown tenant: " + tenantId);
-    return new WrapperDao<>(tenantId, this.sessionFactories.get(tenantId), daoTypeClass,
+    val dao = new WrapperDao<>(tenantId, this.sessionFactories.get(tenantId), daoTypeClass,
         extraConstructorParamClasses, extraConstructorParamObjects,
         new ShardCalculator<>(this.shardManagers,
             new ConsistentHashBucketIdExtractor<>(this.shardManagers)));
+    getEntityBucketExtractorMappings().put(daoTypeClass,
+            new ConsistentHashBucketIdExtractor<>(this.shardManagers));
+    return dao;
   }
 }

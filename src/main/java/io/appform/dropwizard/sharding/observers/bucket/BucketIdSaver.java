@@ -1,4 +1,5 @@
 package io.appform.dropwizard.sharding.observers.bucket;
+
 import com.google.common.base.Preconditions;
 import io.appform.dropwizard.sharding.dao.operations.Count;
 import io.appform.dropwizard.sharding.dao.operations.CountByQuerySpec;
@@ -20,27 +21,35 @@ import io.appform.dropwizard.sharding.dao.operations.lookupdao.DeleteByLookupKey
 import io.appform.dropwizard.sharding.dao.operations.lookupdao.GetAndUpdateByLookupKey;
 import io.appform.dropwizard.sharding.dao.operations.lookupdao.GetByLookupKey;
 import io.appform.dropwizard.sharding.dao.operations.lookupdao.readonlycontext.ReadOnlyForLookupDao;
+import io.appform.dropwizard.sharding.dao.operations.relationaldao.CreateOrUpdate;
 import io.appform.dropwizard.sharding.dao.operations.relationaldao.CreateOrUpdateInLockedContext;
 import io.appform.dropwizard.sharding.dao.operations.relationaldao.readonlycontext.ReadOnlyForRelationalDao;
+import io.appform.dropwizard.sharding.exceptions.BucketIdExtractorAbsentException;
+import io.appform.dropwizard.sharding.exceptions.BucketIdValidationException;
 import io.appform.dropwizard.sharding.sharding.BucketId;
 import io.appform.dropwizard.sharding.sharding.BucketIdExtractor;
 import io.appform.dropwizard.sharding.sharding.ShardingKey;
-import io.appform.dropwizard.sharding.utils.BucketCalculator;
 import lombok.extern.slf4j.Slf4j;
 import lombok.val;
+import org.apache.commons.collections.keyvalue.TiedMapEntry;
+import org.apache.commons.lang3.ClassUtils;
 import org.apache.commons.lang3.reflect.FieldUtils;
 
+import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
 import java.util.Collection;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.function.Function;
 
 @Slf4j
 public class BucketIdSaver implements OpContext.OpContextVisitor<Void> {
     private static final String OPERATION_NOT_SUPPORTED = " operation not supported";
-    private BucketCalculator<String> bucketCalculator;
+    private final Map<Class<?>, BucketIdExtractor<String>> entityBucketExtractorMappings;
 
-    public BucketIdSaver(BucketCalculator<String> bucketCalculator) {
-        this.bucketCalculator = bucketCalculator;
+    public BucketIdSaver(Map<Class<?>, BucketIdExtractor<String>> entityBucketExtractorMappings) {
+        this.entityBucketExtractorMappings = entityBucketExtractorMappings;
     }
 
     @Override
@@ -59,7 +68,7 @@ public class BucketIdSaver implements OpContext.OpContextVisitor<Void> {
     }
 
     @Override
-    public <T> Void visit(GetAndUpdate<T> opContext) throws Exception {
+    public <T> Void visit(GetAndUpdate<T> opContext) {
         validateIncomingBucketId(opContext.getUpdater());
         return null;
     }
@@ -70,7 +79,7 @@ public class BucketIdSaver implements OpContext.OpContextVisitor<Void> {
     }
 
     @Override
-    public <T> Void visit(GetAndUpdateByLookupKey<T> getAndUpdateByLookupKey) throws Exception {
+    public <T> Void visit(GetAndUpdateByLookupKey<T> getAndUpdateByLookupKey) {
         validateIncomingBucketId(getAndUpdateByLookupKey.getUpdater());
         return null;
     }
@@ -86,7 +95,7 @@ public class BucketIdSaver implements OpContext.OpContextVisitor<Void> {
     }
 
     @Override
-    public <T> Void visit(LockAndExecute<T> opContext) throws Exception {
+    public <T> Void visit(LockAndExecute<T> opContext) {
 
         val contextMode = opContext.getMode();
 
@@ -97,11 +106,7 @@ public class BucketIdSaver implements OpContext.OpContextVisitor<Void> {
                 validateIncomingBucketId(opContext.getSaver());
                 val oldSaver = opContext.getSaver();
                 opContext.setSaver(oldSaver.compose((T entity) -> {
-                    try {
-                        addBucketId(entity);
-                    } catch (IllegalAccessException e) {
-                        throw new RuntimeException(e);
-                    }
+                    addBucketId(entity);
                     return entity;
                 }));
                 break;
@@ -112,25 +117,25 @@ public class BucketIdSaver implements OpContext.OpContextVisitor<Void> {
     }
 
     @Override
-    public Void visit(UpdateByQuery updateByQuery) throws Exception {
+    public Void visit(UpdateByQuery updateByQuery) {
         validateIncomingBucketId(updateByQuery.getUpdater());
         return null;
     }
 
     @Override
-    public <T> Void visit(UpdateWithScroll<T> updateWithScroll) throws Exception {
+    public <T> Void visit(UpdateWithScroll<T> updateWithScroll) {
         validateIncomingBucketId(updateWithScroll.getUpdater());
         return null;
     }
 
     @Override
-    public <T> Void visit(UpdateAll<T> updateAll) throws Exception {
+    public <T> Void visit(UpdateAll<T> updateAll) {
         validateIncomingBucketId(updateAll.getUpdater());
         return null;
     }
 
     @Override
-    public <T> Void visit(SelectAndUpdate<T> selectAndUpdate) throws Exception {
+    public <T> Void visit(SelectAndUpdate<T> selectAndUpdate) {
         validateIncomingBucketId(selectAndUpdate.getUpdater());
         return null;
     }
@@ -151,32 +156,22 @@ public class BucketIdSaver implements OpContext.OpContextVisitor<Void> {
     }
 
     @Override
-    public <T, R> Void visit(Save<T, R> opContext) throws Exception {
+    public <T, R> Void visit(Save<T, R> opContext) {
         validateIncomingBucketId(opContext.getSaver());
         val oldSaver = opContext.getSaver();
         opContext.setSaver((T t) -> {
-            try {
-                addBucketId(opContext.getEntity());
-            } catch (IllegalAccessException e) {
-                throw new RuntimeException(e);
-            }
+            addBucketId(opContext.getEntity());
             return oldSaver.apply(opContext.getEntity());
         });
         return null;
     }
 
     @Override
-    public <T> Void visit(SaveAll<T> opContext) throws Exception {
+    public <T> Void visit(SaveAll<T> opContext) {
         validateIncomingBucketId(opContext.getSaver());
         val oldSaver = opContext.getSaver();
         val beforeExecute = oldSaver.compose((Collection<T> entities) -> {
-            opContext.getEntities().stream().forEach(entity -> {
-                try {
-                    addBucketId(entity);
-                } catch (IllegalAccessException e) {
-                    throw new RuntimeException(e);
-                }
-            });
+            opContext.getEntities().forEach(this::addBucketId);
             return entities;
         });
         opContext.setSaver(beforeExecute);
@@ -184,48 +179,36 @@ public class BucketIdSaver implements OpContext.OpContextVisitor<Void> {
     }
 
     @Override
-    public <T> Void visit(CreateOrUpdateByLookupKey<T> createOrUpdateByLookupKey) throws Exception {
+    public <T> Void visit(CreateOrUpdateByLookupKey<T> createOrUpdateByLookupKey) {
         validateIncomingBucketId(createOrUpdateByLookupKey.getUpdater());
         validateIncomingBucketId(createOrUpdateByLookupKey.getSaver());
         val oldSaver = createOrUpdateByLookupKey.getSaver();
         createOrUpdateByLookupKey.setSaver((T t) -> {
-            try {
-                addBucketId(createOrUpdateByLookupKey.getEntityGenerator().get());
-            } catch (IllegalAccessException e) {
-                throw new RuntimeException(e);
-            }
+            addBucketId(createOrUpdateByLookupKey.getEntityGenerator().get());
             return oldSaver.apply(createOrUpdateByLookupKey.getEntityGenerator().get());
         });
         return null;
     }
 
     @Override
-    public <T> Void visit(io.appform.dropwizard.sharding.dao.operations.relationaldao.CreateOrUpdate<T> createOrUpdate) throws Exception {
+    public <T> Void visit(CreateOrUpdate<T> createOrUpdate) {
         validateIncomingBucketId(createOrUpdate.getUpdater());
         validateIncomingBucketId(createOrUpdate.getSaver());
         val oldSaver = createOrUpdate.getSaver();
         createOrUpdate.setSaver((T t) -> {
-            try {
-                addBucketId(createOrUpdate.getEntityGenerator().get());
-            } catch (IllegalAccessException e) {
-                throw new RuntimeException(e);
-            }
+            addBucketId(createOrUpdate.getEntityGenerator().get());
             return oldSaver.apply(createOrUpdate.getEntityGenerator().get());
         });
         return null;
     }
 
     @Override
-    public <T, U> Void visit(CreateOrUpdateInLockedContext<T, U> createOrUpdateInLockedContext) throws Exception {
+    public <T, U> Void visit(CreateOrUpdateInLockedContext<T, U> createOrUpdateInLockedContext) {
         validateIncomingBucketId(createOrUpdateInLockedContext.getUpdater());
         validateIncomingBucketId(createOrUpdateInLockedContext.getSaver());
         val oldSaver = createOrUpdateInLockedContext.getSaver();
         createOrUpdateInLockedContext.setSaver((T t) -> {
-            try {
-                addBucketId(createOrUpdateInLockedContext.getLockedEntity());
-            } catch (IllegalAccessException e) {
-                throw new RuntimeException(e);
-            }
+            addBucketId(createOrUpdateInLockedContext.getLockedEntity());
             return oldSaver.apply((T) createOrUpdateInLockedContext.getLockedEntity());
         });
         return null;
@@ -236,51 +219,108 @@ public class BucketIdSaver implements OpContext.OpContextVisitor<Void> {
         return null;
     }
 
-    private <T> void validateIncomingBucketId(T entity) throws Exception {
-        if(entity == null) {
+    private <T> void validateIncomingBucketId(T entity) {
+        if(Objects.isNull(entity)) {
             return;
         }
-        val entityClass = entity.getClass();
-        Field[] bucketIdFields = FieldUtils.getFieldsWithAnnotation(entityClass, BucketId.class);
-        if(bucketIdFields.length == 0) {
-            //no bucket_id annotation present
+
+        val bucketIdField = resolveFieldFromEntity(entity, BucketId.class,
+                (t) -> {
+                    Preconditions.checkArgument(t.length <= 1,
+                            "Only one field can be designated as @BucketId");
+                    if (t.length == 0) {
+                        // no bucket_id annotation present, we will ignore for now
+                        return null;
+                    }
+                    val keyField = t[0];
+                    Preconditions.checkArgument(ClassUtils.isAssignable(keyField.getType(), Integer.class),
+                            "Key field must be a Integer");
+                    return keyField;
+                });
+
+        if (Objects.isNull(bucketIdField)) {
             return;
         }
-        val keyField = bucketIdFields[0];
-        keyField.setAccessible(true);
-        val bucketId = keyField.get(entity);
-        if(bucketId == null) {
+
+        val bucketId = (int) resolveFieldData(entity, bucketIdField);
+        val bucketExtractor = entityBucketExtractorMappings.get(entity.getClass());
+        if (Objects.isNull(bucketExtractor)) {
+            log.info("No bucketIdExtractor present for entity: {}", entity.getClass());
             return;
         }
-        val expectedBucketId = bucketCalculator.bucketId(shardingkey(entity));
-        if(expectedBucketId != bucketId ){
-            throw new Exception("BucketId sent is not correct");
+
+        val expectedBucketId = bucketExtractor.bucketId(shardingkey(entity));
+        if(expectedBucketId != bucketId){
+            throw new BucketIdValidationException(expectedBucketId, bucketId);
         }
     }
 
-    private <T> void addBucketId(T entity) throws IllegalAccessException {
+    private <T> void addBucketId(T entity) {
         val entityClass = entity.getClass();
-        Field[] bucketIdFields = FieldUtils.getFieldsWithAnnotation(entityClass, BucketId.class);
-        if(bucketIdFields.length == 0) {
-            //no bucket_id annotation present
+        val bucketIdField = resolveFieldFromEntity(entity, BucketId.class,
+                (t) -> {
+                    Preconditions.checkArgument(t.length <= 1,
+                            "Only one field can be designated as @BucketId");
+                    if(t.length == 0) {
+                        //no bucket_id annotation present
+                        return null;
+                    }
+                    val keyField = t[0];
+                    Preconditions.checkArgument(ClassUtils.isAssignable(keyField.getType(), Integer.class),
+                            "Key field must be a Integer");
+                    return keyField;
+                });
+
+        if (Objects.isNull(bucketIdField)) {
             return;
         }
-        val bucketIdField = bucketIdFields[0];
-        bucketIdField.setAccessible(true);
 
         val shardingkey = shardingkey(entity);
-        val bucketId = bucketCalculator.bucketId(shardingkey);
-        bucketIdField.set(entity, bucketId);
+        val bucketExtractor = entityBucketExtractorMappings.get(entityClass);
+        if (Objects.isNull(bucketExtractor)) {
+            log.error("No bucketIdExtractor present for entity: {}", entityClass);
+            throw new BucketIdExtractorAbsentException(entityClass);
+        }
+        val bucketId = bucketExtractor.bucketId(shardingkey);
+
+        try {
+            bucketIdField.setAccessible(true);
+            bucketIdField.set(entity, bucketId);
+        } catch (IllegalAccessException e) {
+            log.error("Error setting field {}", bucketIdField.getName(), e);
+            throw new IllegalArgumentException(e);
+        }
+
     }
 
-    private <T> String shardingkey(T entity) throws IllegalAccessException {
-        val entityClass = entity.getClass();
-        Field[] idFields = FieldUtils.getFieldsWithAnnotation(entityClass, ShardingKey.class);
-        Preconditions.checkArgument(idFields.length != 0, "A field needs to be designated as @Id");
-        Preconditions.checkArgument(idFields.length == 1, "Only one field can be designated as @Id");
-        val keyField = idFields[0];
-        keyField.setAccessible(true);
+    private <T> String shardingkey(T entity) {
+        val shardingKeyField = resolveFieldFromEntity(entity, ShardingKey.class,
+                (t) -> {
+            Preconditions.checkArgument(t.length != 0, "A field needs to be designated as @ShardingKey");
+            Preconditions.checkArgument(t.length == 1, "Only one field can be designated as @ShardingKey");
+            val keyField = t[0];
 
-        return keyField.get(entity).toString();
+            Preconditions.checkArgument(ClassUtils.isAssignable(keyField.getType(), String.class),
+                    "Key field must be a string");
+            return keyField;
+        });
+
+        return resolveFieldData(entity, shardingKeyField).toString();
+    }
+
+    private <T> Field resolveFieldFromEntity(T entity, Class<? extends Annotation> clazz,
+                                             Function<Field[], Field> validateAndResolve) {
+        val keyFields = FieldUtils.getFieldsWithAnnotation(entity.getClass(), clazz);
+        return validateAndResolve.apply(keyFields);
+    }
+
+    private <T> Object resolveFieldData(T entity, Field field) {
+        try {
+            field.setAccessible(true);
+            return field.get(entity);
+        } catch (IllegalAccessException e) {
+            log.error("Error resolving field {}", field.getName(), e);
+            throw new IllegalArgumentException(e);
+        }
     }
 }

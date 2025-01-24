@@ -17,7 +17,6 @@
 
 package io.appform.dropwizard.sharding;
 
-import com.codahale.metrics.MetricRegistry;
 import com.google.common.annotations.VisibleForTesting;
 import io.appform.dropwizard.sharding.caching.LookupCache;
 import io.appform.dropwizard.sharding.caching.RelationalCache;
@@ -32,21 +31,11 @@ import io.appform.dropwizard.sharding.dao.RelationalDao;
 import io.appform.dropwizard.sharding.dao.WrapperDao;
 import io.appform.dropwizard.sharding.filters.TransactionFilter;
 import io.appform.dropwizard.sharding.listeners.TransactionListener;
-import io.appform.dropwizard.sharding.metrics.TransactionMetricManager;
-import io.appform.dropwizard.sharding.metrics.TransactionMetricObserver;
 import io.appform.dropwizard.sharding.observers.TransactionObserver;
-import io.appform.dropwizard.sharding.observers.bucket.BucketIdObserver;
-import io.appform.dropwizard.sharding.observers.bucket.BucketIdSaver;
-import io.appform.dropwizard.sharding.observers.internal.FilteringObserver;
-import io.appform.dropwizard.sharding.observers.internal.ListenerTriggeringObserver;
-import io.appform.dropwizard.sharding.observers.internal.TerminalTransactionObserver;
 import io.appform.dropwizard.sharding.sharding.BucketIdExtractor;
 import io.appform.dropwizard.sharding.sharding.InMemoryLocalShardBlacklistingStore;
 import io.appform.dropwizard.sharding.sharding.ShardBlacklistingStore;
 import io.appform.dropwizard.sharding.sharding.ShardManager;
-import io.appform.dropwizard.sharding.sharding.impl.ConsistentHashBucketIdExtractor;
-import io.appform.dropwizard.sharding.utils.BucketCalculator;
-import io.appform.dropwizard.sharding.utils.ShardCalculator;
 import io.dropwizard.Configuration;
 import io.dropwizard.ConfiguredBundle;
 import io.dropwizard.hibernate.AbstractDAO;
@@ -174,11 +163,6 @@ public abstract class DBShardingBundleBase<T extends Configuration> implements C
         return () -> getConfig(config).getMetricConfig();
     }
 
-    private ShardingBundleOptions getShardingOptions(T configuration) {
-        val shardingOptions = getConfig(configuration).getShardingOptions();
-        return Objects.nonNull(shardingOptions) ? shardingOptions : new ShardingBundleOptions();
-    }
-
     public <EntityType, T extends Configuration>
     LookupDao<EntityType> createParentObjectDao(Class<EntityType> clazz) {
         return new LookupDao<>(dbNamespace, delegate.createParentObjectDao(clazz));
@@ -264,6 +248,10 @@ public abstract class DBShardingBundleBase<T extends Configuration> implements C
             Class[] extraConstructorParamClasses,
             Class[] extraConstructorParamObjects) {
         return delegate.createWrapperDao(dbNamespace, daoTypeClass, extraConstructorParamClasses, extraConstructorParamObjects);
+    }
+
+    final ShardManager getShardManager() {
+        return delegate.getShardManagers().get(dbNamespace);
     }
 
     public void registerObserver(TransactionObserver transactionObserver) {

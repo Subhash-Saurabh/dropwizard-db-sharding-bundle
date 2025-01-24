@@ -1,5 +1,6 @@
 package io.appform.dropwizard.sharding.observers.bucket;
 
+import com.google.common.base.Preconditions;
 import io.appform.dropwizard.sharding.execution.TransactionExecutionContext;
 import io.appform.dropwizard.sharding.observers.TransactionObserver;
 import lombok.extern.slf4j.Slf4j;
@@ -24,6 +25,7 @@ public class BucketIdObserver extends TransactionObserver {
 
     @Override
     public <T> T execute(TransactionExecutionContext context, Supplier<T> supplier) {
+        Preconditions.checkState(this.initDone, "BucketId Observer not initialized yet.");
         context.getOpContext().visit(this.bucketIdSaver);
         return proceed(context, supplier);
     }

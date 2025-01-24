@@ -19,8 +19,6 @@ import io.appform.dropwizard.sharding.sharding.BucketIdExtractor;
 import io.appform.dropwizard.sharding.sharding.InMemoryLocalShardBlacklistingStore;
 import io.appform.dropwizard.sharding.sharding.ShardBlacklistingStore;
 import io.appform.dropwizard.sharding.sharding.ShardManager;
-import io.appform.dropwizard.sharding.sharding.impl.ConsistentHashBucketIdExtractor;
-import io.appform.dropwizard.sharding.utils.BucketCalculator;
 import io.dropwizard.Configuration;
 import io.dropwizard.ConfiguredBundle;
 import lombok.extern.slf4j.Slf4j;
@@ -49,6 +47,7 @@ public abstract class BundleCommonBase<T extends Configuration> implements Confi
   protected final List<TransactionObserver> observers = new ArrayList<>();
 
   protected final List<Class<?>> initialisedEntities;
+  protected final Map<Class<?>, BucketIdExtractor<String>> entityBucketExtractorMappings = new ConcurrentHashMap<>();
 
   protected TransactionObserver rootObserver;
 
@@ -69,10 +68,6 @@ public abstract class BundleCommonBase<T extends Configuration> implements Confi
     return new InMemoryLocalShardBlacklistingStore();
   }
 
-  public BucketCalculator<String> bucketCalculator() {
-    return new BucketCalculator<>(new ConsistentHashBucketIdExtractor<>(this.shardManager));
-  }
-
   public void setupObservers(final MetricConfig metricConfig,
                              final MetricRegistry metricRegistry,
                              final Map<String, ShardManager> shardManagers) {
@@ -89,7 +84,7 @@ public abstract class BundleCommonBase<T extends Configuration> implements Confi
     rootObserver = new TransactionMetricObserver(
         new TransactionMetricManager(() -> metricConfig,
             metricRegistry)).setNext(rootObserver);
-    rootObserver =  new BucketIdObserver(new BucketIdSaver(bucketCalculator())).setNext(rootObserver);
+    rootObserver =  new BucketIdObserver(new BucketIdSaver(entityBucketExtractorMappings)).setNext(rootObserver);
     rootObserver = new FilteringObserver(rootObserver).addFilters(filters);
     //Print the observer chain
     log.debug("Observer chain");
@@ -106,6 +101,10 @@ public abstract class BundleCommonBase<T extends Configuration> implements Confi
             .forEach(filter -> log.debug("    - {}", filter.getClass().getSimpleName()));
       }
     });
+  }
+
+  public Map<Class<?>, BucketIdExtractor<String>> getEntityBucketExtractorMappings() {
+    return entityBucketExtractorMappings;
   }
 
   public List<Class<?>> getInitialisedEntities() {
