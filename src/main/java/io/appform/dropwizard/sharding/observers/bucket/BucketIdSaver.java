@@ -31,25 +31,28 @@ import io.appform.dropwizard.sharding.sharding.BucketIdExtractor;
 import io.appform.dropwizard.sharding.sharding.ShardingKey;
 import lombok.extern.slf4j.Slf4j;
 import lombok.val;
-import org.apache.commons.collections.keyvalue.TiedMapEntry;
 import org.apache.commons.lang3.ClassUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.reflect.FieldUtils;
 
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
 import java.util.Collection;
-import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.function.Function;
 
 @Slf4j
 public class BucketIdSaver implements OpContext.OpContextVisitor<Void> {
     private static final String OPERATION_NOT_SUPPORTED = " operation not supported";
-    private final Map<Class<?>, BucketIdExtractor<String>> entityBucketExtractorMappings;
+    private BucketIdExtractor<String> bucketIdExtractor;
+    private String tenantId;
 
-    public BucketIdSaver(Map<Class<?>, BucketIdExtractor<String>> entityBucketExtractorMappings) {
-        this.entityBucketExtractorMappings = entityBucketExtractorMappings;
+    public BucketIdSaver(final BucketIdExtractor<String> bucketIdExtractor,
+                         final String tenantId) {
+        Preconditions.checkArgument(!Objects.isNull(bucketIdExtractor), "bucketId Extractor must not be null");
+        Preconditions.checkArgument(StringUtils.isEmpty(tenantId), "tenantId must not be empty");
+        this.bucketIdExtractor = bucketIdExtractor;
+        this.tenantId = tenantId;
     }
 
     @Override
@@ -225,63 +228,31 @@ public class BucketIdSaver implements OpContext.OpContextVisitor<Void> {
         }
 
         val bucketIdField = resolveFieldFromEntity(entity, BucketId.class,
-                (t) -> {
-                    Preconditions.checkArgument(t.length <= 1,
-                            "Only one field can be designated as @BucketId");
-                    if (t.length == 0) {
-                        // no bucket_id annotation present, we will ignore for now
-                        return null;
-                    }
-                    val keyField = t[0];
-                    Preconditions.checkArgument(ClassUtils.isAssignable(keyField.getType(), Integer.class),
-                            "Key field must be a Integer");
-                    return keyField;
-                });
-
+                (t) -> validateAndResolveField(t, BucketId.class.getSimpleName()));
         if (Objects.isNull(bucketIdField)) {
             return;
         }
 
         val bucketId = (int) resolveFieldData(entity, bucketIdField);
-        val bucketExtractor = entityBucketExtractorMappings.get(entity.getClass());
-        if (Objects.isNull(bucketExtractor)) {
-            log.info("No bucketIdExtractor present for entity: {}", entity.getClass());
-            return;
-        }
-
-        val expectedBucketId = bucketExtractor.bucketId(shardingkey(entity));
+        val expectedBucketId = bucketIdExtractor.bucketId(this.tenantId, shardingkey(entity));
         if(expectedBucketId != bucketId){
             throw new BucketIdValidationException(expectedBucketId, bucketId);
         }
     }
 
     private <T> void addBucketId(T entity) {
-        val entityClass = entity.getClass();
+        if(Objects.isNull(entity)) {
+            return;
+        }
         val bucketIdField = resolveFieldFromEntity(entity, BucketId.class,
-                (t) -> {
-                    Preconditions.checkArgument(t.length <= 1,
-                            "Only one field can be designated as @BucketId");
-                    if(t.length == 0) {
-                        //no bucket_id annotation present
-                        return null;
-                    }
-                    val keyField = t[0];
-                    Preconditions.checkArgument(ClassUtils.isAssignable(keyField.getType(), Integer.class),
-                            "Key field must be a Integer");
-                    return keyField;
-                });
+                (t) -> validateAndResolveField(t, BucketId.class.getSimpleName()));
 
         if (Objects.isNull(bucketIdField)) {
             return;
         }
 
-        val shardingkey = shardingkey(entity);
-        val bucketExtractor = entityBucketExtractorMappings.get(entityClass);
-        if (Objects.isNull(bucketExtractor)) {
-            log.error("No bucketIdExtractor present for entity: {}", entityClass);
-            throw new BucketIdExtractorAbsentException(entityClass);
-        }
-        val bucketId = bucketExtractor.bucketId(shardingkey);
+        val shardingKey = shardingkey(entity);
+        val bucketId = this.bucketIdExtractor.bucketId(this.tenantId, shardingKey);
 
         try {
             bucketIdField.setAccessible(true);
@@ -295,17 +266,20 @@ public class BucketIdSaver implements OpContext.OpContextVisitor<Void> {
 
     private <T> String shardingkey(T entity) {
         val shardingKeyField = resolveFieldFromEntity(entity, ShardingKey.class,
-                (t) -> {
-            Preconditions.checkArgument(t.length != 0, "A field needs to be designated as @ShardingKey");
-            Preconditions.checkArgument(t.length == 1, "Only one field can be designated as @ShardingKey");
-            val keyField = t[0];
-
-            Preconditions.checkArgument(ClassUtils.isAssignable(keyField.getType(), String.class),
-                    "Key field must be a string");
-            return keyField;
-        });
-
+                (t) -> validateAndResolveField(t, ShardingKey.class.getSimpleName()));
         return resolveFieldData(entity, shardingKeyField).toString();
+    }
+
+    private Field validateAndResolveField(Field[] fields, String fieldType) {
+        if(fields.length == 0) {
+            return null;
+        }
+        Preconditions.checkArgument(fields.length == 1, String.format("Only one field can be designated " +
+                "as @%s", fieldType));
+        val keyField = fields[0];
+        Preconditions.checkArgument(ClassUtils.isAssignable(keyField.getType(), String.class),
+                "Key field must be a string");
+        return keyField;
     }
 
     private <T> Field resolveFieldFromEntity(T entity, Class<? extends Annotation> clazz,

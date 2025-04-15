@@ -19,6 +19,7 @@ import io.appform.dropwizard.sharding.sharding.BucketIdExtractor;
 import io.appform.dropwizard.sharding.sharding.InMemoryLocalShardBlacklistingStore;
 import io.appform.dropwizard.sharding.sharding.ShardBlacklistingStore;
 import io.appform.dropwizard.sharding.sharding.ShardManager;
+import io.appform.dropwizard.sharding.sharding.impl.ConsistentHashBucketIdExtractor;
 import io.dropwizard.Configuration;
 import io.dropwizard.ConfiguredBundle;
 import lombok.extern.slf4j.Slf4j;
@@ -47,7 +48,6 @@ public abstract class BundleCommonBase<T extends Configuration> implements Confi
   protected final List<TransactionObserver> observers = new ArrayList<>();
 
   protected final List<Class<?>> initialisedEntities;
-  protected final Map<Class<?>, BucketIdExtractor<String>> entityBucketExtractorMappings = new ConcurrentHashMap<>();
 
   protected TransactionObserver rootObserver;
 
@@ -66,45 +66,6 @@ public abstract class BundleCommonBase<T extends Configuration> implements Confi
 
   protected ShardBlacklistingStore getBlacklistingStore() {
     return new InMemoryLocalShardBlacklistingStore();
-  }
-
-  public void setupObservers(final MetricConfig metricConfig,
-                             final MetricRegistry metricRegistry,
-                             final Map<String, ShardManager> shardManagers) {
-    //Observer chain starts with filters and ends with listener invocations
-    //Terminal observer calls the actual method
-    rootObserver = new ListenerTriggeringObserver(new TerminalTransactionObserver()).addListeners(
-        listeners);
-    for (var observer : observers) {
-      if (null == observer) {
-        return;
-      }
-      this.rootObserver = observer.setNext(rootObserver);
-    }
-    rootObserver = new TransactionMetricObserver(
-        new TransactionMetricManager(() -> metricConfig,
-            metricRegistry)).setNext(rootObserver);
-    rootObserver =  new BucketIdObserver(new BucketIdSaver(entityBucketExtractorMappings)).setNext(rootObserver);
-    rootObserver = new FilteringObserver(rootObserver).addFilters(filters);
-    //Print the observer chain
-    log.debug("Observer chain");
-    rootObserver.visit(observer -> {
-      log.debug(" Observer: {}", observer.getClass().getSimpleName());
-      if (observer instanceof FilteringObserver) {
-        log.debug("  Filters:");
-        ((FilteringObserver) observer).getFilters()
-            .forEach(filter -> log.debug("    - {}", filter.getClass().getSimpleName()));
-      }
-      if (observer instanceof ListenerTriggeringObserver) {
-        log.debug("  Listeners:");
-        ((ListenerTriggeringObserver) observer).getListeners()
-            .forEach(filter -> log.debug("    - {}", filter.getClass().getSimpleName()));
-      }
-    });
-  }
-
-  public Map<Class<?>, BucketIdExtractor<String>> getEntityBucketExtractorMappings() {
-    return entityBucketExtractorMappings;
   }
 
   public List<Class<?>> getInitialisedEntities() {
