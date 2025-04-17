@@ -229,12 +229,16 @@ public class BucketIdSaver implements OpContext.OpContextVisitor<Void> {
 
         val bucketIdField = resolveFieldFromEntity(entity, BucketId.class,
                 (t) -> validateAndResolveField(t, BucketId.class.getSimpleName()));
-        if (Objects.isNull(bucketIdField)) {
+        val shardingKeyField = resolveFieldFromEntity(entity, ShardingKey.class,
+                (t) -> validateAndResolveField(t, ShardingKey.class.getSimpleName()));
+
+        if (Objects.isNull(bucketIdField) || Objects.isNull(shardingKeyField)) {
             return;
         }
 
         val bucketId = (int) resolveFieldData(entity, bucketIdField);
-        val expectedBucketId = bucketIdExtractor.bucketId(this.tenantId, shardingkey(entity));
+        val shardingKey = (String) resolveFieldData(entity, shardingKeyField).toString();
+        val expectedBucketId = bucketIdExtractor.bucketId(this.tenantId, shardingKey);
         if(expectedBucketId != bucketId){
             throw new BucketIdValidationException(expectedBucketId, bucketId);
         }
@@ -244,15 +248,28 @@ public class BucketIdSaver implements OpContext.OpContextVisitor<Void> {
         if(Objects.isNull(entity)) {
             return;
         }
+
         val bucketIdField = resolveFieldFromEntity(entity, BucketId.class,
                 (t) -> validateAndResolveField(t, BucketId.class.getSimpleName()));
+        val shardingKeyField = resolveFieldFromEntity(entity, ShardingKey.class,
+                (t) -> validateAndResolveField(t, ShardingKey.class.getSimpleName()));
 
-        if (Objects.isNull(bucketIdField)) {
+        if (Objects.isNull(bucketIdField) || Objects.isNull(shardingKeyField)) {
             return;
         }
 
-        val shardingKey = shardingkey(entity);
+        val bucketIdFromData = resolveFieldData(entity, bucketIdField);
+        val shardingKey = (String) resolveFieldData(entity, shardingKeyField).toString();
         val bucketId = this.bucketIdExtractor.bucketId(this.tenantId, shardingKey);
+
+        // TODO:: double check can bucketId be 0 post resolving, if empty
+        if(bucketIdFromData != null) {
+            if ((int) bucketIdFromData != bucketId) {
+                throw new BucketIdValidationException(bucketId, (int) bucketIdFromData);
+            }
+            // bucketId is correctly set, just return
+            return;
+        }
 
         try {
             bucketIdField.setAccessible(true);
@@ -262,12 +279,6 @@ public class BucketIdSaver implements OpContext.OpContextVisitor<Void> {
             throw new IllegalArgumentException(e);
         }
 
-    }
-
-    private <T> String shardingkey(T entity) {
-        val shardingKeyField = resolveFieldFromEntity(entity, ShardingKey.class,
-                (t) -> validateAndResolveField(t, ShardingKey.class.getSimpleName()));
-        return resolveFieldData(entity, shardingKeyField).toString();
     }
 
     private Field validateAndResolveField(Field[] fields, String fieldType) {
