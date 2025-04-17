@@ -9,23 +9,15 @@ import java.util.function.Supplier;
 
 @Slf4j
 public class BucketIdObserver extends TransactionObserver {
-    private BucketIdSaver bucketIdSaver;
-    private volatile boolean initDone;
+    private final BucketIdSaver bucketIdSaver;
 
-    public BucketIdObserver(BucketIdSaver bucketIdSaver) {
+    public BucketIdObserver(final BucketIdSaver bucketIdSaver) {
         super(null);
         this.bucketIdSaver = bucketIdSaver;
-        log.info("BucketId observer constructor called ");
-    }
-    public void init(BucketIdSaver bucketIdSaver) {
-        this.bucketIdSaver = bucketIdSaver;
-        this.initDone = true;
-        log.info("BucketId observer initialisation completed ");
     }
 
     @Override
     public <T> T execute(TransactionExecutionContext context, Supplier<T> supplier) {
-        Preconditions.checkState(this.initDone, "BucketId Observer not initialized yet.");
         context.getOpContext().visit(this.bucketIdSaver);
         return proceed(context, supplier);
     }

@@ -24,7 +24,6 @@ import io.appform.dropwizard.sharding.dao.operations.lookupdao.readonlycontext.R
 import io.appform.dropwizard.sharding.dao.operations.relationaldao.CreateOrUpdate;
 import io.appform.dropwizard.sharding.dao.operations.relationaldao.CreateOrUpdateInLockedContext;
 import io.appform.dropwizard.sharding.dao.operations.relationaldao.readonlycontext.ReadOnlyForRelationalDao;
-import io.appform.dropwizard.sharding.exceptions.BucketIdExtractorAbsentException;
 import io.appform.dropwizard.sharding.exceptions.BucketIdValidationException;
 import io.appform.dropwizard.sharding.sharding.BucketId;
 import io.appform.dropwizard.sharding.sharding.BucketIdExtractor;
