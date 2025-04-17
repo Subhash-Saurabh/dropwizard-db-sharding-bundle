@@ -43,8 +43,8 @@ import java.util.function.Function;
 @Slf4j
 public class BucketIdSaver implements OpContext.OpContextVisitor<Void> {
     private static final String OPERATION_NOT_SUPPORTED = " operation not supported";
-    private BucketIdExtractor<String> bucketIdExtractor;
-    private String tenantId;
+    private final BucketIdExtractor<String> bucketIdExtractor;
+    private final String tenantId;
 
     public BucketIdSaver(final BucketIdExtractor<String> bucketIdExtractor,
                          final String tenantId) {
@@ -98,14 +98,11 @@ public class BucketIdSaver implements OpContext.OpContextVisitor<Void> {
 
     @Override
     public <T> Void visit(LockAndExecute<T> opContext) {
-
         val contextMode = opContext.getMode();
-
         switch (contextMode) {
             case READ:
                 return null;
             case INSERT:
-                validateIncomingBucketId(opContext.getSaver());
                 val oldSaver = opContext.getSaver();
                 opContext.setSaver(oldSaver.compose((T entity) -> {
                     addBucketId(entity);
@@ -159,7 +156,6 @@ public class BucketIdSaver implements OpContext.OpContextVisitor<Void> {
 
     @Override
     public <T, R> Void visit(Save<T, R> opContext) {
-        validateIncomingBucketId(opContext.getSaver());
         val oldSaver = opContext.getSaver();
         opContext.setSaver((T t) -> {
             addBucketId(opContext.getEntity());
@@ -170,7 +166,6 @@ public class BucketIdSaver implements OpContext.OpContextVisitor<Void> {
 
     @Override
     public <T> Void visit(SaveAll<T> opContext) {
-        validateIncomingBucketId(opContext.getSaver());
         val oldSaver = opContext.getSaver();
         val beforeExecute = oldSaver.compose((Collection<T> entities) -> {
             opContext.getEntities().forEach(this::addBucketId);
@@ -183,7 +178,6 @@ public class BucketIdSaver implements OpContext.OpContextVisitor<Void> {
     @Override
     public <T> Void visit(CreateOrUpdateByLookupKey<T> createOrUpdateByLookupKey) {
         validateIncomingBucketId(createOrUpdateByLookupKey.getUpdater());
-        validateIncomingBucketId(createOrUpdateByLookupKey.getSaver());
         val oldSaver = createOrUpdateByLookupKey.getSaver();
         createOrUpdateByLookupKey.setSaver((T t) -> {
             addBucketId(createOrUpdateByLookupKey.getEntityGenerator().get());
@@ -195,7 +189,6 @@ public class BucketIdSaver implements OpContext.OpContextVisitor<Void> {
     @Override
     public <T> Void visit(CreateOrUpdate<T> createOrUpdate) {
         validateIncomingBucketId(createOrUpdate.getUpdater());
-        validateIncomingBucketId(createOrUpdate.getSaver());
         val oldSaver = createOrUpdate.getSaver();
         createOrUpdate.setSaver((T t) -> {
             addBucketId(createOrUpdate.getEntityGenerator().get());
@@ -207,7 +200,6 @@ public class BucketIdSaver implements OpContext.OpContextVisitor<Void> {
     @Override
     public <T, U> Void visit(CreateOrUpdateInLockedContext<T, U> createOrUpdateInLockedContext) {
         validateIncomingBucketId(createOrUpdateInLockedContext.getUpdater());
-        validateIncomingBucketId(createOrUpdateInLockedContext.getSaver());
         val oldSaver = createOrUpdateInLockedContext.getSaver();
         createOrUpdateInLockedContext.setSaver((T t) -> {
             addBucketId(createOrUpdateInLockedContext.getLockedEntity());
@@ -252,7 +244,6 @@ public class BucketIdSaver implements OpContext.OpContextVisitor<Void> {
                 (t) -> validateAndResolveField(t, BucketId.class.getSimpleName()));
         val shardingKeyField = resolveFieldFromEntity(entity, ShardingKey.class,
                 (t) -> validateAndResolveField(t, ShardingKey.class.getSimpleName()));
-
         if (Objects.isNull(bucketIdField) || Objects.isNull(shardingKeyField)) {
             return;
         }

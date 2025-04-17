@@ -1,25 +1,13 @@
 package io.appform.dropwizard.sharding;
 
-import com.codahale.metrics.MetricRegistry;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
-import io.appform.dropwizard.sharding.config.MetricConfig;
 import io.appform.dropwizard.sharding.config.ShardingBundleOptions;
 import io.appform.dropwizard.sharding.filters.TransactionFilter;
 import io.appform.dropwizard.sharding.listeners.TransactionListener;
-import io.appform.dropwizard.sharding.metrics.TransactionMetricManager;
-import io.appform.dropwizard.sharding.metrics.TransactionMetricObserver;
 import io.appform.dropwizard.sharding.observers.TransactionObserver;
-import io.appform.dropwizard.sharding.observers.bucket.BucketIdObserver;
-import io.appform.dropwizard.sharding.observers.bucket.BucketIdSaver;
-import io.appform.dropwizard.sharding.observers.internal.FilteringObserver;
-import io.appform.dropwizard.sharding.observers.internal.ListenerTriggeringObserver;
-import io.appform.dropwizard.sharding.observers.internal.TerminalTransactionObserver;
-import io.appform.dropwizard.sharding.sharding.BucketIdExtractor;
 import io.appform.dropwizard.sharding.sharding.InMemoryLocalShardBlacklistingStore;
 import io.appform.dropwizard.sharding.sharding.ShardBlacklistingStore;
-import io.appform.dropwizard.sharding.sharding.ShardManager;
-import io.appform.dropwizard.sharding.sharding.impl.ConsistentHashBucketIdExtractor;
 import io.dropwizard.Configuration;
 import io.dropwizard.ConfiguredBundle;
 import lombok.extern.slf4j.Slf4j;
@@ -34,10 +22,8 @@ import org.reflections.Reflections;
 import javax.persistence.Entity;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 public abstract class BundleCommonBase<T extends Configuration> implements ConfiguredBundle<T> {
