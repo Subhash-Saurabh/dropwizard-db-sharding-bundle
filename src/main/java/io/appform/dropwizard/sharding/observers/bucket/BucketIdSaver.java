@@ -49,7 +49,7 @@ public class BucketIdSaver implements OpContext.OpContextVisitor<Void> {
     public BucketIdSaver(final BucketIdExtractor<String> bucketIdExtractor,
                          final String tenantId) {
         Preconditions.checkArgument(!Objects.isNull(bucketIdExtractor), "bucketId Extractor must not be null");
-        Preconditions.checkArgument(StringUtils.isEmpty(tenantId), "tenantId must not be empty");
+        Preconditions.checkArgument(!StringUtils.isEmpty(tenantId), "tenantId must not be empty");
         this.bucketIdExtractor = bucketIdExtractor;
         this.tenantId = tenantId;
     }
