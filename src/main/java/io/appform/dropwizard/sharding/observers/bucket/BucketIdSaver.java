@@ -219,9 +219,9 @@ public class BucketIdSaver implements OpContext.OpContextVisitor<Void> {
         }
 
         val bucketIdField = resolveFieldFromEntity(entity, BucketId.class,
-                (t) -> validateAndResolveField(t, BucketId.class.getSimpleName()));
+                (t) -> validateAndResolveField(t, BucketId.class.getSimpleName(), Long.class));
         val shardingKeyField = resolveFieldFromEntity(entity, ShardingKey.class,
-                (t) -> validateAndResolveField(t, ShardingKey.class.getSimpleName()));
+                (t) -> validateAndResolveField(t, ShardingKey.class.getSimpleName(), String.class));
 
         if (Objects.isNull(bucketIdField) || Objects.isNull(shardingKeyField)) {
             return;
@@ -241,9 +241,9 @@ public class BucketIdSaver implements OpContext.OpContextVisitor<Void> {
         }
 
         val bucketIdField = resolveFieldFromEntity(entity, BucketId.class,
-                (t) -> validateAndResolveField(t, BucketId.class.getSimpleName()));
+                (t) -> validateAndResolveField(t, BucketId.class.getSimpleName(), Long.class));
         val shardingKeyField = resolveFieldFromEntity(entity, ShardingKey.class,
-                (t) -> validateAndResolveField(t, ShardingKey.class.getSimpleName()));
+                (t) -> validateAndResolveField(t, ShardingKey.class.getSimpleName(), String.class));
         if (Objects.isNull(bucketIdField) || Objects.isNull(shardingKeyField)) {
             return;
         }
@@ -271,15 +271,17 @@ public class BucketIdSaver implements OpContext.OpContextVisitor<Void> {
 
     }
 
-    private Field validateAndResolveField(Field[] fields, String fieldType) {
+    private Field validateAndResolveField(final Field[] fields,
+                                          final String fieldType,
+                                          final Class<?> acceptableClass) {
         if(fields.length == 0) {
             return null;
         }
         Preconditions.checkArgument(fields.length == 1, String.format("Only one field can be designated " +
                 "as @%s", fieldType));
         val keyField = fields[0];
-        Preconditions.checkArgument(ClassUtils.isAssignable(keyField.getType(), String.class),
-                "Key field must be a string");
+        Preconditions.checkArgument(ClassUtils.isAssignable(keyField.getType(), acceptableClass),
+                String.format("Key field must be of acceptable Type: %s", acceptableClass));
         return keyField;
     }
 
