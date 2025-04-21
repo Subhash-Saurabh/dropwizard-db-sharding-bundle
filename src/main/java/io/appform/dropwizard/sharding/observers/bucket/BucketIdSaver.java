@@ -247,19 +247,8 @@ public class BucketIdSaver implements OpContext.OpContextVisitor<Void> {
         if (Objects.isNull(bucketIdField) || Objects.isNull(shardingKeyField)) {
             return;
         }
-
-        val bucketIdFromData = resolveFieldData(entity, bucketIdField);
         val shardingKey = (String) resolveFieldData(entity, shardingKeyField).toString();
         val bucketId = this.bucketIdExtractor.bucketId(this.tenantId, shardingKey);
-
-        // TODO:: double check can bucketId be 0 post resolving, if empty
-        if(bucketIdFromData != null) {
-            if ((int) bucketIdFromData != bucketId) {
-                throw new BucketIdValidationException(bucketId, (int) bucketIdFromData);
-            }
-            // bucketId is correctly set, just return
-            return;
-        }
 
         try {
             bucketIdField.setAccessible(true);
@@ -268,7 +257,6 @@ public class BucketIdSaver implements OpContext.OpContextVisitor<Void> {
             log.error("Error setting field {}", bucketIdField.getName(), e);
             throw new IllegalArgumentException(e);
         }
-
     }
 
     private Field validateAndResolveField(final Field[] fields,
