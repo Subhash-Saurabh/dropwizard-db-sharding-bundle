@@ -1,6 +1,7 @@
 package io.appform.dropwizard.sharding.observers.bucket;
 
 import com.google.common.base.Preconditions;
+import io.appform.dropwizard.sharding.EntityMeta;
 import io.appform.dropwizard.sharding.dao.operations.Count;
 import io.appform.dropwizard.sharding.dao.operations.CountByQuerySpec;
 import io.appform.dropwizard.sharding.dao.operations.Get;
@@ -25,33 +26,31 @@ import io.appform.dropwizard.sharding.dao.operations.relationaldao.CreateOrUpdat
 import io.appform.dropwizard.sharding.dao.operations.relationaldao.CreateOrUpdateInLockedContext;
 import io.appform.dropwizard.sharding.dao.operations.relationaldao.readonlycontext.ReadOnlyForRelationalDao;
 import io.appform.dropwizard.sharding.exceptions.BucketIdValidationException;
-import io.appform.dropwizard.sharding.sharding.BucketId;
 import io.appform.dropwizard.sharding.sharding.BucketIdExtractor;
-import io.appform.dropwizard.sharding.sharding.ShardingKey;
 import lombok.extern.slf4j.Slf4j;
 import lombok.val;
-import org.apache.commons.lang3.ClassUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.reflect.FieldUtils;
 
-import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
 import java.util.Collection;
+import java.util.Map;
 import java.util.Objects;
-import java.util.function.Function;
 
 @Slf4j
 public class BucketIdSaver implements OpContext.OpContextVisitor<Void> {
     private static final String OPERATION_NOT_SUPPORTED = " operation not supported";
     private final BucketIdExtractor<String> bucketIdExtractor;
     private final String tenantId;
+    private final Map<String, EntityMeta> initialisedEntityMeta;
 
     public BucketIdSaver(final BucketIdExtractor<String> bucketIdExtractor,
-                         final String tenantId) {
+                         final String tenantId,
+                         final Map<String, EntityMeta> initialisedEntityMeta) {
         Preconditions.checkArgument(!Objects.isNull(bucketIdExtractor), "bucketId Extractor must not be null");
         Preconditions.checkArgument(!StringUtils.isEmpty(tenantId), "tenantId must not be empty");
         this.bucketIdExtractor = bucketIdExtractor;
         this.tenantId = tenantId;
+        this.initialisedEntityMeta = initialisedEntityMeta;
     }
 
     @Override
@@ -177,7 +176,10 @@ public class BucketIdSaver implements OpContext.OpContextVisitor<Void> {
 
     @Override
     public <T> Void visit(CreateOrUpdateByLookupKey<T> createOrUpdateByLookupKey) {
-        validateIncomingBucketId(createOrUpdateByLookupKey.getUpdater());
+        T result = createOrUpdateByLookupKey.getGetLockedForWrite().apply(createOrUpdateByLookupKey.getId());
+        if (result != null) {
+            validateIncomingBucketId(createOrUpdateByLookupKey.getMutator().apply(result));
+        }
         val oldSaver = createOrUpdateByLookupKey.getSaver();
         createOrUpdateByLookupKey.setSaver((T t) -> {
             addBucketId(createOrUpdateByLookupKey.getEntityGenerator().get());
@@ -188,11 +190,20 @@ public class BucketIdSaver implements OpContext.OpContextVisitor<Void> {
 
     @Override
     public <T> Void visit(CreateOrUpdate<T> createOrUpdate) {
-        validateIncomingBucketId(createOrUpdate.getUpdater());
+        val oldMutator = createOrUpdate.getMutator();
+        createOrUpdate.setMutator(result -> {
+            if (result != null) {
+                T value = oldMutator.apply(result);
+                addBucketId(value);
+                return value;
+            }
+            return null;
+        });
+
         val oldSaver = createOrUpdate.getSaver();
-        createOrUpdate.setSaver((T t) -> {
-            addBucketId(createOrUpdate.getEntityGenerator().get());
-            return oldSaver.apply(createOrUpdate.getEntityGenerator().get());
+        createOrUpdate.setSaver((T result) -> {
+            addBucketId(result);
+            return oldSaver.apply(result);
         });
         return null;
     }
@@ -217,17 +228,14 @@ public class BucketIdSaver implements OpContext.OpContextVisitor<Void> {
         if(Objects.isNull(entity)) {
             return;
         }
-
-        val bucketIdField = resolveFieldFromEntity(entity, BucketId.class,
-                (t) -> validateAndResolveField(t, BucketId.class.getSimpleName(), Long.class));
-        val shardingKeyField = resolveFieldFromEntity(entity, ShardingKey.class,
-                (t) -> validateAndResolveField(t, ShardingKey.class.getSimpleName(), String.class));
-
-        if (Objects.isNull(bucketIdField) || Objects.isNull(shardingKeyField)) {
+        val entitymeta = initialisedEntityMeta.get(entity.getClass().getName());
+        val bucketKeyField = entitymeta.getBucketKeyField();
+        val shardingKeyField = entitymeta.getShardingKeyField();
+        if (Objects.isNull(bucketKeyField) || Objects.isNull(shardingKeyField)) {
             return;
         }
 
-        val bucketId = (int) resolveFieldData(entity, bucketIdField);
+        val bucketId = (Integer) resolveFieldData(entity, bucketKeyField);
         val shardingKey = (String) resolveFieldData(entity, shardingKeyField).toString();
         val expectedBucketId = bucketIdExtractor.bucketId(this.tenantId, shardingKey);
         if(expectedBucketId != bucketId){
@@ -240,43 +248,22 @@ public class BucketIdSaver implements OpContext.OpContextVisitor<Void> {
             return;
         }
 
-        val bucketIdField = resolveFieldFromEntity(entity, BucketId.class,
-                (t) -> validateAndResolveField(t, BucketId.class.getSimpleName(), Long.class));
-        val shardingKeyField = resolveFieldFromEntity(entity, ShardingKey.class,
-                (t) -> validateAndResolveField(t, ShardingKey.class.getSimpleName(), String.class));
-        if (Objects.isNull(bucketIdField) || Objects.isNull(shardingKeyField)) {
+        val entitymeta = initialisedEntityMeta.get(entity.getClass().getName());
+        val bucketKeyField = entitymeta.getBucketKeyField();
+        val shardingKeyField = entitymeta.getShardingKeyField();
+        if (Objects.isNull(bucketKeyField) || Objects.isNull(shardingKeyField)) {
             return;
         }
         val shardingKey = (String) resolveFieldData(entity, shardingKeyField).toString();
         val bucketId = this.bucketIdExtractor.bucketId(this.tenantId, shardingKey);
 
         try {
-            bucketIdField.setAccessible(true);
-            bucketIdField.set(entity, bucketId);
+            bucketKeyField.setAccessible(true);
+            bucketKeyField.set(entity, bucketId);
         } catch (IllegalAccessException e) {
-            log.error("Error setting field {}", bucketIdField.getName(), e);
+            log.error("Error setting field {}", bucketKeyField.getName(), e);
             throw new IllegalArgumentException(e);
         }
-    }
-
-    private Field validateAndResolveField(final Field[] fields,
-                                          final String fieldType,
-                                          final Class<?> acceptableClass) {
-        if(fields.length == 0) {
-            return null;
-        }
-        Preconditions.checkArgument(fields.length == 1, String.format("Only one field can be designated " +
-                "as @%s", fieldType));
-        val keyField = fields[0];
-        Preconditions.checkArgument(ClassUtils.isAssignable(keyField.getType(), acceptableClass),
-                String.format("Key field must be of acceptable Type: %s", acceptableClass));
-        return keyField;
-    }
-
-    private <T> Field resolveFieldFromEntity(T entity, Class<? extends Annotation> clazz,
-                                             Function<Field[], Field> validateAndResolve) {
-        val keyFields = FieldUtils.getFieldsWithAnnotation(entity.getClass(), clazz);
-        return validateAndResolve.apply(keyFields);
     }
 
     private <T> Object resolveFieldData(T entity, Field field) {

@@ -8,9 +8,9 @@ import static java.lang.annotation.ElementType.METHOD;
 import static java.lang.annotation.RetentionPolicy.RUNTIME;
 
 /**
- * Annotation to annotate bucketId
+ * Annotation to annotate bucketKey
  */
 @Target({FIELD, METHOD})
 @Retention(RUNTIME)
-public @interface BucketId {
+public @interface BucketKey {
 }

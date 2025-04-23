@@ -158,7 +158,7 @@ public abstract class MultiTenantDBShardingBundleBase<T extends Configuration> e
       this.sessionFactories.put(tenantId, sessionFactory);
       this.shardingOptions.put(tenantId, shardingOption);
       healthCheckManager.manageHealthChecks(shardConfig.getBlacklist(), environment);
-      setupObservers(shardConfig.getMetricConfig(), environment.metrics(), this.shardManagers, tenantId);
+      setupObservers(shardConfig.getMetricConfig(), environment.metrics(), this.shardManagers, tenantId, initialisedEntityMeta);
       environment.admin().addTask(new BlacklistShardTask(tenantId, shardManager));
       environment.admin().addTask(new UnblacklistShardTask(tenantId, shardManager));
     });
@@ -167,7 +167,8 @@ public abstract class MultiTenantDBShardingBundleBase<T extends Configuration> e
   private void setupObservers(final MetricConfig metricConfig,
                               final MetricRegistry metricRegistry,
                               final Map<String, ShardManager> shardManagers,
-                              final String tenantId) {
+                              final String tenantId,
+                              final Map<String, EntityMeta> initialisedEntityMeta) {
     //Observer chain starts with filters and ends with listener invocations
     //Terminal observer calls the actual method
     rootObserver = new ListenerTriggeringObserver(new TerminalTransactionObserver()).addListeners(
@@ -181,9 +182,10 @@ public abstract class MultiTenantDBShardingBundleBase<T extends Configuration> e
     rootObserver = new TransactionMetricObserver(
             new TransactionMetricManager(() -> metricConfig,
                     metricRegistry)).setNext(rootObserver);
-    rootObserver =  new BucketIdObserver(new BucketIdSaver(new ConsistentHashBucketIdExtractor<>(shardManagers), tenantId))
-            .setNext(rootObserver);
-    rootObserver = new FilteringObserver(rootObserver).addFilters(filters);
+
+    rootObserver = new FilteringObserver(rootObserver).addFilters(filters).setNext(rootObserver);
+    rootObserver =  new BucketIdObserver(new BucketIdSaver(new ConsistentHashBucketIdExtractor<>(shardManagers),
+            tenantId, initialisedEntityMeta));
     //Print the observer chain
     log.debug("Observer chain");
     rootObserver.visit(observer -> {

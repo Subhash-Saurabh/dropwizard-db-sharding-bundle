@@ -2,15 +2,21 @@ package io.appform.dropwizard.sharding;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Maps;
 import io.appform.dropwizard.sharding.config.ShardingBundleOptions;
 import io.appform.dropwizard.sharding.filters.TransactionFilter;
 import io.appform.dropwizard.sharding.listeners.TransactionListener;
 import io.appform.dropwizard.sharding.observers.TransactionObserver;
+import io.appform.dropwizard.sharding.sharding.BucketKey;
 import io.appform.dropwizard.sharding.sharding.InMemoryLocalShardBlacklistingStore;
 import io.appform.dropwizard.sharding.sharding.ShardBlacklistingStore;
+import io.appform.dropwizard.sharding.sharding.ShardingKey;
 import io.dropwizard.Configuration;
 import io.dropwizard.ConfiguredBundle;
 import lombok.extern.slf4j.Slf4j;
+import lombok.val;
+import org.apache.commons.lang3.ClassUtils;
+import org.apache.commons.lang3.reflect.FieldUtils;
 import org.jasypt.encryption.pbe.StandardPBEBigDecimalEncryptor;
 import org.jasypt.encryption.pbe.StandardPBEBigIntegerEncryptor;
 import org.jasypt.encryption.pbe.StandardPBEByteEncryptor;
@@ -20,10 +26,14 @@ import org.jasypt.iv.StringFixedIvGenerator;
 import org.reflections.Reflections;
 
 import javax.persistence.Entity;
+import java.lang.annotation.Annotation;
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Function;
 
 @Slf4j
 public abstract class BundleCommonBase<T extends Configuration> implements ConfiguredBundle<T> {
@@ -33,7 +43,11 @@ public abstract class BundleCommonBase<T extends Configuration> implements Confi
 
   protected final List<TransactionObserver> observers = new ArrayList<>();
 
+  // TODO::subhash validate all entities must have (shardingKey and bucketKey) in orch Supported Bundle
+  // OK to have shardingKey present and not bucketKey
   protected final List<Class<?>> initialisedEntities;
+
+  protected final Map<String, EntityMeta> initialisedEntityMeta = Maps.newHashMap();
 
   protected TransactionObserver rootObserver;
 
@@ -48,6 +62,46 @@ public abstract class BundleCommonBase<T extends Configuration> implements Confi
         String.format("No entity class found at %s",
             String.join(",", classPathPrefixList)));
     this.initialisedEntities = ImmutableList.<Class<?>>builder().addAll(entities).build();
+    validateInitialisedEntitiesAndCache(initialisedEntities);
+  }
+
+  private void validateInitialisedEntitiesAndCache(final List<Class<?>> initialisedEntities) {
+    initialisedEntities.forEach(entity -> {
+      val bucketKeyField = resolveFieldFromEntity(entity, BucketKey.class,
+              (t) -> validateAndResolveField(t, BucketKey.class.getSimpleName(), Integer.class));
+      val shardingKeyField = resolveFieldFromEntity(entity, ShardingKey.class,
+              (t) -> validateAndResolveField(t, ShardingKey.class.getSimpleName(), String.class));
+
+      if (!Objects.isNull(bucketKeyField) && Objects.isNull(shardingKeyField)) {
+        throw new RuntimeException("Sharding Key must be present if bucketKey is present");
+      }
+
+      val entityMeta = EntityMeta.builder()
+              .bucketKeyField(bucketKeyField)
+              .shardingKeyField(shardingKeyField)
+              .build();
+      initialisedEntityMeta.put(entity.getName(), entityMeta);
+    });
+  }
+
+  private Field validateAndResolveField(final Field[] fields,
+                                        final String fieldType,
+                                        final Class<?> acceptableClass) {
+    if(fields.length == 0) {
+      return null;
+    }
+    Preconditions.checkArgument(fields.length == 1, String.format("Only one field can be designated " +
+            "as @%s", fieldType));
+    val keyField = fields[0];
+    Preconditions.checkArgument(ClassUtils.isAssignable(keyField.getType(), acceptableClass),
+            String.format("Key field must be of acceptable Type: %s", acceptableClass));
+    return keyField;
+  }
+
+  private <T> Field resolveFieldFromEntity(T entity, Class<? extends Annotation> clazz,
+                                           Function<Field[], Field> validateAndResolve) {
+    val keyFields = FieldUtils.getFieldsWithAnnotation(entity.getClass(), clazz);
+    return validateAndResolve.apply(keyFields);
   }
 
   protected ShardBlacklistingStore getBlacklistingStore() {
