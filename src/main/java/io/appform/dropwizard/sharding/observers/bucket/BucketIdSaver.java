@@ -35,6 +35,7 @@ import java.lang.reflect.Field;
 import java.util.Collection;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 
 @Slf4j
 public class BucketIdSaver implements OpContext.OpContextVisitor<Void> {
@@ -70,8 +71,12 @@ public class BucketIdSaver implements OpContext.OpContextVisitor<Void> {
 
     @Override
     public <T> Void visit(GetAndUpdate<T> opContext) {
-        validateIncomingBucketId(opContext.getUpdater());
-        return null;
+       val oldMutator = opContext.getMutator();
+       opContext.setMutator((T entity) -> {
+           addBucketId(entity);
+           return oldMutator.apply(entity);
+       });
+       return null;
     }
 
     @Override
@@ -81,7 +86,13 @@ public class BucketIdSaver implements OpContext.OpContextVisitor<Void> {
 
     @Override
     public <T> Void visit(GetAndUpdateByLookupKey<T> getAndUpdateByLookupKey) {
-        validateIncomingBucketId(getAndUpdateByLookupKey.getUpdater());
+        val oldMutator = getAndUpdateByLookupKey.getMutator();
+        getAndUpdateByLookupKey.setMutator((Optional<T> entity) -> {
+            if (entity.isPresent()) {
+                addBucketId(entity);
+            }
+            return oldMutator.apply(entity);
+        });
         return null;
     }
 
@@ -103,10 +114,10 @@ public class BucketIdSaver implements OpContext.OpContextVisitor<Void> {
                 return null;
             case INSERT:
                 val oldSaver = opContext.getSaver();
-                opContext.setSaver(oldSaver.compose((T entity) -> {
+                opContext.setSaver((T entity) -> {
                     addBucketId(entity);
-                    return entity;
-                }));
+                    return oldSaver.apply(entity);
+                });
                 break;
             default:
                 throw new UnsupportedOperationException(contextMode + OPERATION_NOT_SUPPORTED);
@@ -116,25 +127,36 @@ public class BucketIdSaver implements OpContext.OpContextVisitor<Void> {
 
     @Override
     public Void visit(UpdateByQuery updateByQuery) {
-        validateIncomingBucketId(updateByQuery.getUpdater());
         return null;
     }
 
     @Override
     public <T> Void visit(UpdateWithScroll<T> updateWithScroll) {
-        validateIncomingBucketId(updateWithScroll.getUpdater());
+        val oldMutator = updateWithScroll.getMutator();
+        updateWithScroll.setMutator((T entity) -> {
+            addBucketId(entity);
+            return oldMutator.apply(entity);
+        });
         return null;
     }
 
     @Override
     public <T> Void visit(UpdateAll<T> updateAll) {
-        validateIncomingBucketId(updateAll.getUpdater());
+        val oldMutator = updateAll.getMutator();
+        updateAll.setMutator((T entity) -> {
+            addBucketId(entity);
+            return oldMutator.apply(entity);
+        });
         return null;
     }
 
     @Override
     public <T> Void visit(SelectAndUpdate<T> selectAndUpdate) {
-        validateIncomingBucketId(selectAndUpdate.getUpdater());
+        val oldMutator = selectAndUpdate.getMutator();
+        selectAndUpdate.setMutator((T entity) -> {
+            addBucketId(entity);
+            return oldMutator.apply(entity);
+        });
         return null;
     }
 
@@ -166,20 +188,25 @@ public class BucketIdSaver implements OpContext.OpContextVisitor<Void> {
     @Override
     public <T> Void visit(SaveAll<T> opContext) {
         val oldSaver = opContext.getSaver();
-        val beforeExecute = oldSaver.compose((Collection<T> entities) -> {
-            opContext.getEntities().forEach(this::addBucketId);
-            return entities;
+        opContext.setSaver((Collection<T> entities) -> {
+            entities.forEach(this::addBucketId);
+            return oldSaver.apply(entities);
         });
-        opContext.setSaver(beforeExecute);
         return null;
     }
 
     @Override
     public <T> Void visit(CreateOrUpdateByLookupKey<T> createOrUpdateByLookupKey) {
-        T result = createOrUpdateByLookupKey.getGetLockedForWrite().apply(createOrUpdateByLookupKey.getId());
-        if (result != null) {
-            validateIncomingBucketId(createOrUpdateByLookupKey.getMutator().apply(result));
-        }
+        val oldMutator = createOrUpdateByLookupKey.getMutator();
+        createOrUpdateByLookupKey.setMutator(result -> {
+            if (result != null) {
+                T value = oldMutator.apply(result);
+                addBucketId(value);
+                return value;
+            }
+            return null;
+        });
+
         val oldSaver = createOrUpdateByLookupKey.getSaver();
         createOrUpdateByLookupKey.setSaver((T t) -> {
             addBucketId(createOrUpdateByLookupKey.getEntityGenerator().get());
@@ -210,11 +237,20 @@ public class BucketIdSaver implements OpContext.OpContextVisitor<Void> {
 
     @Override
     public <T, U> Void visit(CreateOrUpdateInLockedContext<T, U> createOrUpdateInLockedContext) {
-        validateIncomingBucketId(createOrUpdateInLockedContext.getUpdater());
+        val oldMutator = createOrUpdateInLockedContext.getMutator();
+        createOrUpdateInLockedContext.setMutator(result -> {
+            if (result != null) {
+                T value = oldMutator.apply(result);
+                addBucketId(value);
+                return value;
+            }
+            return null;
+        });
+
         val oldSaver = createOrUpdateInLockedContext.getSaver();
-        createOrUpdateInLockedContext.setSaver((T t) -> {
-            addBucketId(createOrUpdateInLockedContext.getLockedEntity());
-            return oldSaver.apply((T) createOrUpdateInLockedContext.getLockedEntity());
+        createOrUpdateInLockedContext.setSaver((T entity) -> {
+            addBucketId(entity);
+            return oldSaver.apply(entity);
         });
         return null;
     }
@@ -222,25 +258,6 @@ public class BucketIdSaver implements OpContext.OpContextVisitor<Void> {
     @Override
     public <T, R> Void visit(Select<T, R> select) {
         return null;
-    }
-
-    private <T> void validateIncomingBucketId(T entity) {
-        if(Objects.isNull(entity)) {
-            return;
-        }
-        val entitymeta = initialisedEntityMeta.get(entity.getClass().getName());
-        val bucketKeyField = entitymeta.getBucketKeyField();
-        val shardingKeyField = entitymeta.getShardingKeyField();
-        if (Objects.isNull(bucketKeyField) || Objects.isNull(shardingKeyField)) {
-            return;
-        }
-
-        val bucketId = (Integer) resolveFieldData(entity, bucketKeyField);
-        val shardingKey = (String) resolveFieldData(entity, shardingKeyField).toString();
-        val expectedBucketId = bucketIdExtractor.bucketId(this.tenantId, shardingKey);
-        if(expectedBucketId != bucketId){
-            throw new BucketIdValidationException(expectedBucketId, bucketId);
-        }
     }
 
     private <T> void addBucketId(T entity) {
