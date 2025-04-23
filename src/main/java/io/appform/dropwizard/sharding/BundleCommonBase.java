@@ -43,8 +43,6 @@ public abstract class BundleCommonBase<T extends Configuration> implements Confi
 
   protected final List<TransactionObserver> observers = new ArrayList<>();
 
-  // TODO::subhash validate all entities must have (shardingKey and bucketKey) in orch Supported Bundle
-  // OK to have shardingKey present and not bucketKey
   protected final List<Class<?>> initialisedEntities;
 
   protected final Map<String, EntityMeta> initialisedEntityMeta = Maps.newHashMap();
@@ -98,7 +96,7 @@ public abstract class BundleCommonBase<T extends Configuration> implements Confi
     return keyField;
   }
 
-  private <T> Field resolveFieldFromEntity(T entity, Class<? extends Annotation> clazz,
+  private <K> Field resolveFieldFromEntity(K entity, Class<? extends Annotation> clazz,
                                            Function<Field[], Field> validateAndResolve) {
     val keyFields = FieldUtils.getFieldsWithAnnotation(entity.getClass(), clazz);
     return validateAndResolve.apply(keyFields);
