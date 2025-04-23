@@ -17,6 +17,7 @@ import lombok.extern.slf4j.Slf4j;
 import lombok.val;
 import org.apache.commons.lang3.ClassUtils;
 import org.apache.commons.lang3.reflect.FieldUtils;
+import org.checkerframework.checker.units.qual.K;
 import org.jasypt.encryption.pbe.StandardPBEBigDecimalEncryptor;
 import org.jasypt.encryption.pbe.StandardPBEBigIntegerEncryptor;
 import org.jasypt.encryption.pbe.StandardPBEByteEncryptor;
@@ -51,6 +52,7 @@ public abstract class BundleCommonBase<T extends Configuration> implements Confi
 
   protected BundleCommonBase(Class<?> entity, Class<?>... entities) {
     this.initialisedEntities = ImmutableList.<Class<?>>builder().add(entity).add(entities).build();
+    validateInitialisedEntitiesAndCache(initialisedEntities);
   }
 
   protected BundleCommonBase(List<String> classPathPrefixList) {
@@ -64,10 +66,10 @@ public abstract class BundleCommonBase<T extends Configuration> implements Confi
   }
 
   private void validateInitialisedEntitiesAndCache(final List<Class<?>> initialisedEntities) {
-    initialisedEntities.forEach(entity -> {
-      val bucketKeyField = resolveFieldFromEntity(entity, BucketKey.class,
+    initialisedEntities.forEach(clazz -> {
+      val bucketKeyField = resolveFieldFromEntity(clazz, BucketKey.class,
               (t) -> validateAndResolveField(t, BucketKey.class.getSimpleName(), Integer.class));
-      val shardingKeyField = resolveFieldFromEntity(entity, ShardingKey.class,
+      val shardingKeyField = resolveFieldFromEntity(clazz, ShardingKey.class,
               (t) -> validateAndResolveField(t, ShardingKey.class.getSimpleName(), String.class));
 
       if (!Objects.isNull(bucketKeyField) && Objects.isNull(shardingKeyField)) {
@@ -78,7 +80,7 @@ public abstract class BundleCommonBase<T extends Configuration> implements Confi
               .bucketKeyField(bucketKeyField)
               .shardingKeyField(shardingKeyField)
               .build();
-      initialisedEntityMeta.put(entity.getName(), entityMeta);
+      initialisedEntityMeta.put(clazz.getName(), entityMeta);
     });
   }
 
@@ -96,9 +98,9 @@ public abstract class BundleCommonBase<T extends Configuration> implements Confi
     return keyField;
   }
 
-  private <K> Field resolveFieldFromEntity(K entity, Class<? extends Annotation> clazz,
-                                           Function<Field[], Field> validateAndResolve) {
-    val keyFields = FieldUtils.getFieldsWithAnnotation(entity.getClass(), clazz);
+  private Field resolveFieldFromEntity(Class<?> clazz, Class<? extends Annotation> annotationClazz,
+                                       Function<Field[], Field> validateAndResolve) {
+    val keyFields = FieldUtils.getFieldsWithAnnotation(clazz, annotationClazz);
     return validateAndResolve.apply(keyFields);
   }
 
