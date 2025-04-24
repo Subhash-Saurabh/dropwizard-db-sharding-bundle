@@ -2,9 +2,9 @@ package io.appform.dropwizard.sharding.observers;
 
 import io.appform.dropwizard.sharding.sharding.BucketKey;
 import io.appform.dropwizard.sharding.sharding.ShardingKey;
-import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Getter;
-import lombok.NoArgsConstructor;
+import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
 import lombok.experimental.FieldNameConstants;
@@ -15,20 +15,18 @@ import javax.persistence.Entity;
 import javax.persistence.Table;
 
 @Entity
-@Table(name = "simple_parents")
+@Table(name = "simple_children")
+@FieldNameConstants
 @Getter
 @Setter
 @ToString(callSuper = true)
-@NoArgsConstructor
-@AllArgsConstructor
-@FieldNameConstants
-public class BucketKeyAwareParent extends SimpleParent {
+@RequiredArgsConstructor
+public class BucketKeyAwareChild extends SimpleChild {
+    @Column
+    @ShardingKey
+    private String shardingKey;
 
     @Column
     @BucketKey
     private int bucketKey;
-
-    @Column
-    @ShardingKey
-    private String shardingKey;
 }

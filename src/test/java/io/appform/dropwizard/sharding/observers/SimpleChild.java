@@ -1,5 +1,6 @@
 package io.appform.dropwizard.sharding.observers;
 
+import lombok.Builder;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;

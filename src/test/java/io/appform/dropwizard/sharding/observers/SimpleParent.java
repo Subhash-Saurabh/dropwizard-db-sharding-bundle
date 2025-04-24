@@ -2,6 +2,7 @@ package io.appform.dropwizard.sharding.observers;
 
 import io.appform.dropwizard.sharding.sharding.LookupKey;
 import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
