@@ -171,8 +171,10 @@ public abstract class MultiTenantDBShardingBundleBase<T extends Configuration> e
                               final Map<String, EntityMeta> initialisedEntityMeta) {
     //Observer chain starts with filters and ends with listener invocations
     //Terminal observer calls the actual method
+    rootObserver =  new BucketIdObserver(new BucketIdSaver(new ConsistentHashBucketIdExtractor<>(shardManagers),
+            tenantId, initialisedEntityMeta));
     rootObserver = new ListenerTriggeringObserver(new TerminalTransactionObserver()).addListeners(
-            listeners);
+            listeners).setNext(rootObserver);
     for (var observer : observers) {
       if (null == observer) {
         return;
@@ -183,9 +185,7 @@ public abstract class MultiTenantDBShardingBundleBase<T extends Configuration> e
             new TransactionMetricManager(() -> metricConfig,
                     metricRegistry)).setNext(rootObserver);
 
-    rootObserver = new FilteringObserver(rootObserver).addFilters(filters).setNext(rootObserver);
-    rootObserver =  new BucketIdObserver(new BucketIdSaver(new ConsistentHashBucketIdExtractor<>(shardManagers),
-            tenantId, initialisedEntityMeta));
+    rootObserver = new FilteringObserver(rootObserver).addFilters(filters);
     //Print the observer chain
     log.debug("Observer chain");
     rootObserver.visit(observer -> {
