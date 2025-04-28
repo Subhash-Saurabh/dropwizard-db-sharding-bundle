@@ -1,5 +1,7 @@
 package io.appform.dropwizard.sharding.observers;
 
+import io.appform.dropwizard.sharding.sharding.BucketKey;
+import io.appform.dropwizard.sharding.sharding.ShardingKey;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
@@ -33,10 +35,15 @@ public class SimpleChild {
     private long id;
 
     @Column
+    @ShardingKey
     private String parent;
 
     @Column
     private String value;
+
+    @Column
+    @BucketKey
+    private int bucketKey;
 
     @Override
     public final boolean equals(Object o) {

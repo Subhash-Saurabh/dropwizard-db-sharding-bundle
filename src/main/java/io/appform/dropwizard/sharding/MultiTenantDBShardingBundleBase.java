@@ -55,6 +55,8 @@ import io.dropwizard.setup.Environment;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import lombok.val;
+import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.collections.MapUtils;
 import org.hibernate.SessionFactory;
 
 import java.util.Arrays;
@@ -171,10 +173,16 @@ public abstract class MultiTenantDBShardingBundleBase<T extends Configuration> e
                               final Map<String, EntityMeta> initialisedEntityMeta) {
     //Observer chain starts with filters and ends with listener invocations
     //Terminal observer calls the actual method
-    rootObserver =  new BucketIdObserver(new BucketIdSaver(new ConsistentHashBucketIdExtractor<>(shardManagers),
-            tenantId, initialisedEntityMeta));
-    rootObserver = new ListenerTriggeringObserver(new TerminalTransactionObserver()).addListeners(
-            listeners).setNext(rootObserver);
+    rootObserver = new TerminalTransactionObserver();
+    if (!MapUtils.isEmpty(initialisedEntityMeta)) {
+      // Only initialise if we have initialisedEntityMeta.
+      // This won't be present in case bucketKey field itself is not present, so no need to apply this observer
+      rootObserver =  new BucketIdObserver(new BucketIdSaver(new ConsistentHashBucketIdExtractor<>(shardManagers),
+              tenantId, initialisedEntityMeta)).setNext(rootObserver);
+    }
+    rootObserver = new ListenerTriggeringObserver(rootObserver).addListeners(
+            listeners);
+
     for (var observer : observers) {
       if (null == observer) {
         return;

@@ -10,14 +10,20 @@ import org.hibernate.criterion.DetachedCriteria;
 import org.hibernate.criterion.Property;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import java.util.Collections;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 public class BucketKeySaverTest extends BundleBasedTestBase {
 
+    private static final String shardingKey = "PV10";
+    private static final String childValue = "CV10";
+    private static final int preComputedBucketKeyValue = 103;
+
     @Override
     protected DBShardingBundleBase<TestConfig> getBundle() {
-        return new BalancedDBShardingBundle<TestConfig>(BucketKeyAwareParent.class, BucketKeyAwareChild.class) {
+        return new BalancedDBShardingBundle<TestConfig>(SimpleParent.class, SimpleChild.class) {
 
             @Override
             protected ShardedHibernateFactory getConfig(TestConfig config) {
@@ -26,40 +32,230 @@ public class BucketKeySaverTest extends BundleBasedTestBase {
         };
     }
 
-    @Test
     @SneakyThrows
-    public void testObserverInvocationForBasicOps() {
+    @Test
+    public void testObserverInvocationForSave() {
+
         val bundle = createBundle();
-        val shardingKey = "P11010";
-        val name = "P11010";
-        val childValue = "CV";
+        val parentDao = bundle.createParentObjectDao(SimpleParent.class);
+        val childDao = bundle.createRelatedObjectDao(SimpleChild.class);
 
-        val parentDao = bundle.createParentObjectDao(BucketKeyAwareParent.class);
-        val childDao = bundle.createRelatedObjectDao(BucketKeyAwareChild.class);
+        val obj = buildParentObj(shardingKey);
+        parentDao.save(obj);
 
-        val obj = new BucketKeyAwareParent();
-        obj.setName(shardingKey);
-        obj.setShardingKey(shardingKey);
-        val parent = parentDao.save(obj).orElse(null);
-        assertNotNull(parent);
-        val getParent = parentDao.get(shardingKey);
-        assertNotNull(getParent.get());
-        assertNotEquals(0, getParent.get().getBucketKey());
+        val persistedParent = parentDao.get(shardingKey);
+        assertNotNull(persistedParent.get());
+        assertEquals(preComputedBucketKeyValue, persistedParent.get().getBucketKey());
 
-        val childObj = new BucketKeyAwareChild();
-        childObj.setShardingKey(shardingKey);
-        childObj.setParent(shardingKey);
-        childObj.setValue(childValue);
-
-        val child = childDao.save(shardingKey, childObj);
-        assertNotNull(child);
-        val getChild = childDao.select(shardingKey,  DetachedCriteria.forClass(BucketKeyAwareChild.class)
-                        .add(Property.forName(BucketKeyAwareChild.Fields.shardingKey)
-                                .eq(parent.getShardingKey())),
+        val childObj = buildChildObj(shardingKey, childValue);
+        childDao.save(shardingKey, childObj);
+        val persistedChild = childDao.select(shardingKey,  DetachedCriteria.forClass(SimpleChild.class)
+                        .add(Property.forName(SimpleChild.Fields.parent)
+                                .eq(shardingKey)),
                 0,
                 Integer.MAX_VALUE);
+        assertNotNull(persistedChild.get(0));
+        assertEquals(preComputedBucketKeyValue, persistedChild.get(0).getBucketKey());
+    }
+
+    @SneakyThrows
+    @Test
+    public void testObserverInvocationForSaveAll() {
+        val bundle = createBundle();
+        val parentDao = bundle.createParentObjectDao(SimpleParent.class);
+        val childDao = bundle.createRelatedObjectDao(SimpleChild.class);
+
+        val obj = buildParentObj(shardingKey);
+        parentDao.save(obj);
+        val persistedParent = parentDao.get(shardingKey);
+        val bucketKeyValue = persistedParent.get().getBucketKey();
+        assertEquals(preComputedBucketKeyValue, bucketKeyValue);
+
+        val childObj = buildChildObj(shardingKey, childValue);
+        childDao.saveAll(shardingKey, Collections.singletonList(childObj));
+        val persistedChild = childDao.select(shardingKey,  DetachedCriteria.forClass(SimpleChild.class)
+                        .add(Property.forName(SimpleChild.Fields.parent)
+                                .eq(shardingKey)),
+                0,
+                Integer.MAX_VALUE);
+        assertNotNull(persistedChild.get(0));
+        assertEquals(preComputedBucketKeyValue, persistedChild.get(0).getBucketKey());
+    }
+
+    @SneakyThrows
+    @Test
+    public void testObserverForCreateAndUpdate() {
+        val bundle = createBundle();
+        val childDao = bundle.createRelatedObjectDao(SimpleChild.class);
+        val criteria = DetachedCriteria.forClass(SimpleChild.class)
+                .add(Property.forName(SimpleChild.Fields.parent).eq(shardingKey));
+        val childObj = buildChildObj(shardingKey, childValue);
+        childDao.createOrUpdate(shardingKey, criteria, t -> t, () -> childObj);
+
+        var persistedChild = childDao.select(shardingKey, criteria, 0, Integer.MAX_VALUE);
+        assertNotNull(persistedChild.get(0));
+        assertEquals(preComputedBucketKeyValue, persistedChild.get(0).getBucketKey());
+
+        childDao.createOrUpdate(shardingKey, criteria, t -> {
+            t.setBucketKey(-1);
+            return t;
+        }, () -> childObj);
+
+        persistedChild = childDao.select(shardingKey, criteria, 0, Integer.MAX_VALUE);
+        assertNotNull(persistedChild.get(0));
+        assertEquals(preComputedBucketKeyValue, persistedChild.get(0).getBucketKey());
+    }
+
+    @SneakyThrows
+    @Test
+    public void testObserverForCreateAndUpdateInLockedContext() {
+        val bundle = createBundle();
+        val childDao = bundle.createRelatedObjectDao(SimpleChild.class);
+
+        val criteria = DetachedCriteria.forClass(SimpleChild.class)
+                .add(Property.forName(SimpleChild.Fields.parent).eq(shardingKey));
+        val childObj = buildChildObj(shardingKey, childValue);
+
+        var lockedContext = childDao.saveAndGetExecutor(shardingKey, childObj);
+        lockedContext.createOrUpdate(childDao, criteria, t -> t, () -> childObj).execute();
+
+        var getChild = childDao.select(shardingKey, criteria, 0, Integer.MAX_VALUE);
         assertNotNull(getChild.get(0));
-        assertNotEquals(0, getChild.get(0).getBucketKey());
+        assertEquals(preComputedBucketKeyValue, getChild.get(0).getBucketKey());
+
+        lockedContext = childDao.lockAndGetExecutor(shardingKey, criteria);
+        lockedContext.createOrUpdate(childDao, criteria, t -> {
+            t.setBucketKey(-1);
+            return t;
+        }, () -> childObj).execute();
+
+        getChild = childDao.select(shardingKey, criteria, 0, Integer.MAX_VALUE);
+        assertNotNull(getChild.get(0));
+        assertEquals(preComputedBucketKeyValue, getChild.get(0).getBucketKey());
+    }
+
+    @SneakyThrows
+    @Test
+    public void testObserverForCreateAndUpdateByLookupKey() {
+        val bundle = createBundle();
+        val parentDao = bundle.createParentObjectDao(SimpleParent.class);
+
+        val parentObj = buildParentObj(shardingKey);
+        parentDao.createOrUpdate(shardingKey, (t) -> t, () -> parentObj);
+
+        var persistedParent = parentDao.get(shardingKey);
+        assertNotNull(persistedParent.get());
+        assertEquals(preComputedBucketKeyValue, persistedParent.get().getBucketKey());
+
+        parentDao.createOrUpdate(shardingKey, (t) -> {
+            t.setBucketKey(-1);
+            return t;
+        }, () -> parentObj);
+
+        persistedParent = parentDao.get(shardingKey);
+        assertNotNull(persistedParent.get());
+        assertEquals(preComputedBucketKeyValue, persistedParent.get().getBucketKey());
+    }
+
+    @SneakyThrows
+    @Test
+    public void testObserverForGetAndUpdateByLookupKey() {
+        val bundle = createBundle();
+        val parentDao = bundle.createParentObjectDao(SimpleParent.class);
+
+        val parentObj = buildParentObj(shardingKey);
+        parentDao.save(parentObj);
+
+        var persistedParent = parentDao.get(shardingKey);
+        assertNotNull(persistedParent.get());
+        assertEquals(preComputedBucketKeyValue, persistedParent.get().getBucketKey());
+
+        parentDao.update(shardingKey, (t) -> {
+            if (t.isPresent()) {
+                t.get().setBucketKey(-1);
+                return t.get();
+            }
+            return null;
+        });
+
+        persistedParent = parentDao.get(shardingKey);
+        assertNotNull(persistedParent.get());
+        assertEquals(preComputedBucketKeyValue, persistedParent.get().getBucketKey());
+    }
+
+    @SneakyThrows
+    @Test
+    public void testObserverForSelectAndUpdate() {
+        val bundle = createBundle();
+        val childDao = bundle.createRelatedObjectDao(SimpleChild.class);
+
+        val criteria = DetachedCriteria.forClass(SimpleChild.class)
+                .add(Property.forName(SimpleChild.Fields.parent).eq(shardingKey));
+        val childObj = buildChildObj(shardingKey, childValue);
+
+        childDao.save(shardingKey, childObj);
+        var persistedChild = childDao.select(shardingKey, criteria, 0, Integer.MAX_VALUE);
+        assertNotNull(persistedChild.get(0));
+        assertEquals(preComputedBucketKeyValue, persistedChild.get(0).getBucketKey());
+
+        childDao.update(shardingKey, criteria, t -> {
+         t.setBucketKey(-1);
+         return t;
+        });
+
+        persistedChild = childDao.select(shardingKey, criteria, 0, Integer.MAX_VALUE);
+        assertNotNull(persistedChild.get(0));
+        assertEquals(preComputedBucketKeyValue, persistedChild.get(0).getBucketKey());
+    }
+
+    @SneakyThrows
+    @Test
+    public void testObserverForUpdateAll() {
+        val bundle = createBundle();
+        val childDao = bundle.createRelatedObjectDao(SimpleChild.class);
+
+        val criteria = DetachedCriteria.forClass(SimpleChild.class)
+                .add(Property.forName(SimpleChild.Fields.parent).eq(shardingKey));
+        val childObj = buildChildObj(shardingKey, childValue);
+
+        childDao.save(shardingKey, childObj);
+        var persistedChild = childDao.select(shardingKey, criteria, 0, Integer.MAX_VALUE);
+        assertNotNull(persistedChild.get(0));
+        assertEquals(preComputedBucketKeyValue, persistedChild.get(0).getBucketKey());
+
+        childDao.updateAll(shardingKey, 0, Integer.MAX_VALUE, criteria, t -> {
+            t.setBucketKey(-1);
+            return t;
+        });
+
+        persistedChild = childDao.select(shardingKey, criteria, 0, Integer.MAX_VALUE);
+        assertNotNull(persistedChild.get(0));
+        assertEquals(preComputedBucketKeyValue, persistedChild.get(0).getBucketKey());
+    }
+
+    @SneakyThrows
+    @Test
+    public void testObserverForGetAndUpdate() {
+        val bundle = createBundle();
+        val childDao = bundle.createRelatedObjectDao(SimpleChild.class);
+
+        val criteria = DetachedCriteria.forClass(SimpleChild.class)
+                .add(Property.forName(SimpleChild.Fields.parent).eq(shardingKey));
+        val childObj = buildChildObj(shardingKey, childValue);
+
+        childDao.save(shardingKey, childObj);
+        var persistedChild = childDao.select(shardingKey, criteria, 0, Integer.MAX_VALUE);
+        assertNotNull(persistedChild.get(0));
+        assertEquals(preComputedBucketKeyValue, persistedChild.get(0).getBucketKey());
+
+        childDao.update(shardingKey, persistedChild.get(0).getId(), t -> {
+            t.setBucketKey(-1);
+            return t;
+        });
+
+        persistedChild = childDao.select(shardingKey, criteria, 0, Integer.MAX_VALUE);
+        assertNotNull(persistedChild.get(0));
+        assertEquals(preComputedBucketKeyValue, persistedChild.get(0).getBucketKey());
     }
 
     private DBShardingBundleBase<TestConfig> createBundle() {
@@ -71,5 +267,22 @@ public class BucketKeySaverTest extends BundleBasedTestBase {
         return bundle;
     }
 
+    private SimpleParent buildParentObj(final String shardingKey) {
+        val obj = new SimpleParent();
+        obj.setName(shardingKey);
+        // setting incorrect bucketKey, should not be persisted or updated anywhere.
+        obj.setBucketKey(-1);
+        return obj;
+    }
+
+    private SimpleChild buildChildObj(final String shardingKey,
+                                      final String value) {
+        val obj = new SimpleChild();
+        obj.setParent(shardingKey);
+        obj.setValue(value);
+        // setting incorrect bucketKey, should not be persisted or updated anywhere.
+        obj.setBucketKey(-1);
+        return obj;
+    }
 
 }

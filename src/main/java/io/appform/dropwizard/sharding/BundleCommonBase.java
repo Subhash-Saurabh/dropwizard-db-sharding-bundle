@@ -9,6 +9,7 @@ import io.appform.dropwizard.sharding.listeners.TransactionListener;
 import io.appform.dropwizard.sharding.observers.TransactionObserver;
 import io.appform.dropwizard.sharding.sharding.BucketKey;
 import io.appform.dropwizard.sharding.sharding.InMemoryLocalShardBlacklistingStore;
+import io.appform.dropwizard.sharding.sharding.LookupKey;
 import io.appform.dropwizard.sharding.sharding.ShardBlacklistingStore;
 import io.appform.dropwizard.sharding.sharding.ShardingKey;
 import io.dropwizard.Configuration;
@@ -17,7 +18,6 @@ import lombok.extern.slf4j.Slf4j;
 import lombok.val;
 import org.apache.commons.lang3.ClassUtils;
 import org.apache.commons.lang3.reflect.FieldUtils;
-import org.checkerframework.checker.units.qual.K;
 import org.jasypt.encryption.pbe.StandardPBEBigDecimalEncryptor;
 import org.jasypt.encryption.pbe.StandardPBEBigIntegerEncryptor;
 import org.jasypt.encryption.pbe.StandardPBEByteEncryptor;
@@ -52,7 +52,7 @@ public abstract class BundleCommonBase<T extends Configuration> implements Confi
 
   protected BundleCommonBase(Class<?> entity, Class<?>... entities) {
     this.initialisedEntities = ImmutableList.<Class<?>>builder().add(entity).add(entities).build();
-    validateInitialisedEntitiesAndCache(initialisedEntities);
+    validateInitialisedEntitiesAndBuildMetaCache(initialisedEntities);
   }
 
   protected BundleCommonBase(List<String> classPathPrefixList) {
@@ -62,23 +62,31 @@ public abstract class BundleCommonBase<T extends Configuration> implements Confi
         String.format("No entity class found at %s",
             String.join(",", classPathPrefixList)));
     this.initialisedEntities = ImmutableList.<Class<?>>builder().addAll(entities).build();
-    validateInitialisedEntitiesAndCache(initialisedEntities);
+    validateInitialisedEntitiesAndBuildMetaCache(initialisedEntities);
   }
 
-  private void validateInitialisedEntitiesAndCache(final List<Class<?>> initialisedEntities) {
+  private void validateInitialisedEntitiesAndBuildMetaCache(final List<Class<?>> initialisedEntities) {
     initialisedEntities.forEach(clazz -> {
       val bucketKeyField = resolveFieldFromEntity(clazz, BucketKey.class,
               (t) -> validateAndResolveField(t, BucketKey.class.getSimpleName(), Integer.class));
+
+      if (Objects.isNull(bucketKeyField)) {
+        return;
+      }
+
+      val lookupKeyField = resolveFieldFromEntity(clazz, LookupKey.class,
+              (t) -> validateAndResolveField(t, LookupKey.class.getSimpleName(), String.class));
+
       val shardingKeyField = resolveFieldFromEntity(clazz, ShardingKey.class,
               (t) -> validateAndResolveField(t, ShardingKey.class.getSimpleName(), String.class));
 
-      if (!Objects.isNull(bucketKeyField) && Objects.isNull(shardingKeyField)) {
-        throw new RuntimeException("Sharding Key must be present if bucketKey is present");
+      if (Objects.isNull(shardingKeyField) && Objects.isNull(lookupKeyField) ) {
+        throw new RuntimeException("ShardingKey or LookupKey must be present if bucketKey is present");
       }
 
       val entityMeta = EntityMeta.builder()
               .bucketKeyField(bucketKeyField)
-              .shardingKeyField(shardingKeyField)
+              .shardingKeyField(Objects.isNull(shardingKeyField) ? lookupKeyField : shardingKeyField)
               .build();
       initialisedEntityMeta.put(clazz.getName(), entityMeta);
     });

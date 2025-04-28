@@ -8,7 +8,7 @@ import static java.lang.annotation.ElementType.METHOD;
 import static java.lang.annotation.RetentionPolicy.RUNTIME;
 
 /**
- * Annotation to get ShardingKey
+ * Annotation to annotate ShardingKey. This is specifically for relational dao, as lookupdao has @LookupKey
  */
 @Target({FIELD, METHOD})
 @Retention(RUNTIME)
