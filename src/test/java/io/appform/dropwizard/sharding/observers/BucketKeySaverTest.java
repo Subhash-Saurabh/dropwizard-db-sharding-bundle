@@ -14,6 +14,7 @@ import java.util.Collections;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class BucketKeySaverTest extends BundleBasedTestBase {
 
@@ -23,7 +24,7 @@ public class BucketKeySaverTest extends BundleBasedTestBase {
 
     @Override
     protected DBShardingBundleBase<TestConfig> getBundle() {
-        return new BalancedDBShardingBundle<TestConfig>(SimpleParent.class, SimpleChild.class) {
+        return new BalancedDBShardingBundle<TestConfig>(SimpleParent.class, SimpleChild.class, SimpleParentWithoutBucketKey.class) {
 
             @Override
             protected ShardedHibernateFactory getConfig(TestConfig config) {
@@ -258,6 +259,20 @@ public class BucketKeySaverTest extends BundleBasedTestBase {
         assertEquals(preComputedBucketKeyValue, persistedChild.get(0).getBucketKey());
     }
 
+    @SneakyThrows
+    @Test
+    public void testWhenBucketKeyNotPresent() {
+        val bundle = createBundle();
+        val parentWithoutBucketKeyDao = bundle.createParentObjectDao(SimpleParentWithoutBucketKey.class);
+
+        val obj = buildParentWithoutBucketKeyObj(shardingKey);
+        parentWithoutBucketKeyDao.save(obj);
+
+        val persistedParent = parentWithoutBucketKeyDao.get(shardingKey);
+        assertTrue(persistedParent.isPresent());
+        assertEquals(shardingKey, persistedParent.get().getName());
+    }
+
     private DBShardingBundleBase<TestConfig> createBundle() {
         val bundle = getBundle();
         bundle.initialize(bootstrap);
@@ -267,9 +282,9 @@ public class BucketKeySaverTest extends BundleBasedTestBase {
         return bundle;
     }
 
-    private SimpleParent buildParentObj(final String shardingKey) {
+    private SimpleParent buildParentObj(final String lookupKey) {
         val obj = new SimpleParent();
-        obj.setName(shardingKey);
+        obj.setName(lookupKey);
         // setting incorrect bucketKey, should not be persisted or updated anywhere.
         obj.setBucketKey(-1);
         return obj;
@@ -282,6 +297,13 @@ public class BucketKeySaverTest extends BundleBasedTestBase {
         obj.setValue(value);
         // setting incorrect bucketKey, should not be persisted or updated anywhere.
         obj.setBucketKey(-1);
+        return obj;
+    }
+
+    private SimpleParentWithoutBucketKey buildParentWithoutBucketKeyObj (final String lookupKey) {
+        val obj = new SimpleParentWithoutBucketKey();
+        obj.setName(lookupKey);
+        // setting incorrect bucketKey, should not be persisted or updated anywhere.
         return obj;
     }
 
