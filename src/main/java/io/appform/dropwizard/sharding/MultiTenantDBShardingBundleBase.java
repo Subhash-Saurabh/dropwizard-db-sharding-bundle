@@ -177,8 +177,8 @@ public abstract class MultiTenantDBShardingBundleBase<T extends Configuration> e
     if (!MapUtils.isEmpty(initialisedEntityMeta)) {
       // Only initialise if we have initialisedEntityMeta.
       // This won't be present in case bucketKey field itself is not present, so no need to apply this observer
-      rootObserver = new BucketKeyObserver(new BucketKeyPersistor(new ConsistentHashBucketIdExtractor<>(shardManagers),
-              tenantId, initialisedEntityMeta)).setNext(rootObserver);
+      rootObserver = new BucketKeyObserver(new BucketKeyPersistor(tenantId, new ConsistentHashBucketIdExtractor<>(shardManagers),
+              initialisedEntityMeta)).setNext(rootObserver);
     }
     rootObserver = new ListenerTriggeringObserver(rootObserver).addListeners(
             listeners);

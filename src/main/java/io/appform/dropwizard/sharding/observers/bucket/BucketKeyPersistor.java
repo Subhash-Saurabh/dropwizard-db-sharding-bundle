@@ -44,16 +44,16 @@ public class BucketKeyPersistor implements OpContext.OpContextVisitor<Void> {
     private final BucketIdExtractor<String> bucketIdExtractor;
     private final Map<String, EntityMeta> initialisedEntityMeta;
 
-    public BucketKeyPersistor(final BucketIdExtractor<String> bucketIdExtractor,
-                              final String tenantId,
-                              final Map<String, EntityMeta> initialisedEntityMeta) {
+    public BucketKeyPersistor(final String tenantId,
+                              final BucketIdExtractor<String> bucketIdExtractor,
+                              final Map<String, EntityMeta> initialisedEntitiesMeta) {
         Preconditions.checkArgument(!Objects.isNull(bucketIdExtractor), "BucketIdExtractor must not be null");
         Preconditions.checkArgument(!StringUtils.isEmpty(tenantId), "tenantId must not be empty");
-        Preconditions.checkArgument(!MapUtils.isEmpty(initialisedEntityMeta), "initialisedEntityMeta must not" +
+        Preconditions.checkArgument(!MapUtils.isEmpty(initialisedEntitiesMeta), "initialisedEntitiesMeta must not" +
                 " be null or empty");
         this.tenantId = tenantId;
         this.bucketIdExtractor = bucketIdExtractor;
-        this.initialisedEntityMeta = initialisedEntityMeta;
+        this.initialisedEntityMeta = initialisedEntitiesMeta;
     }
 
     @Override
@@ -73,13 +73,13 @@ public class BucketKeyPersistor implements OpContext.OpContextVisitor<Void> {
 
     @Override
     public <T> Void visit(GetAndUpdate<T> opContext) {
-       val oldMutator = opContext.getMutator();
-       opContext.setMutator((T entity) -> {
-           T value = oldMutator.apply(entity);
-           addBucketId(value);
-           return value;
-       });
-       return null;
+        val oldMutator = opContext.getMutator();
+        opContext.setMutator((T entity) -> {
+            T value = oldMutator.apply(entity);
+            addBucketId(value);
+            return value;
+        });
+        return null;
     }
 
     @Override
@@ -266,7 +266,7 @@ public class BucketKeyPersistor implements OpContext.OpContextVisitor<Void> {
     }
 
     private <T> void addBucketId(T entity) {
-        if(Objects.isNull(entity)) {
+        if (Objects.isNull(entity)) {
             return;
         }
 
