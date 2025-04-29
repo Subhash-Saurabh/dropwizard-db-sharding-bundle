@@ -28,6 +28,7 @@ import io.appform.dropwizard.sharding.dao.operations.relationaldao.readonlyconte
 import io.appform.dropwizard.sharding.sharding.BucketIdExtractor;
 import lombok.extern.slf4j.Slf4j;
 import lombok.val;
+import org.apache.commons.collections.MapUtils;
 import org.apache.commons.lang3.StringUtils;
 
 import java.lang.reflect.Field;
@@ -48,6 +49,8 @@ public class BucketKeySaver implements OpContext.OpContextVisitor<Void> {
                           final Map<String, EntityMeta> initialisedEntityMeta) {
         Preconditions.checkArgument(!Objects.isNull(bucketIdExtractor), "bucketId Extractor must not be null");
         Preconditions.checkArgument(!StringUtils.isEmpty(tenantId), "tenantId must not be empty");
+        Preconditions.checkArgument(!MapUtils.isEmpty(initialisedEntityMeta), "initialisedEntityMeta must not" +
+                " be null or empty");
         this.bucketIdExtractor = bucketIdExtractor;
         this.tenantId = tenantId;
         this.initialisedEntityMeta = initialisedEntityMeta;
@@ -114,9 +117,8 @@ public class BucketKeySaver implements OpContext.OpContextVisitor<Void> {
             case INSERT:
                 val oldSaver = opContext.getSaver();
                 opContext.setSaver((T entity) -> {
-                    T value = oldSaver.apply(entity);
-                    addBucketId(value);
-                    return value;
+                    addBucketId(entity);
+                    return oldSaver.apply(entity);
                 });
                 break;
             default:
