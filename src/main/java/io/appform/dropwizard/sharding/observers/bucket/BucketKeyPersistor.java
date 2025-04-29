@@ -1,7 +1,7 @@
 package io.appform.dropwizard.sharding.observers.bucket;
 
 import com.google.common.base.Preconditions;
-import io.appform.dropwizard.sharding.EntityMeta;
+import io.appform.dropwizard.sharding.sharding.EntityMeta;
 import io.appform.dropwizard.sharding.dao.operations.Count;
 import io.appform.dropwizard.sharding.dao.operations.CountByQuerySpec;
 import io.appform.dropwizard.sharding.dao.operations.Get;
@@ -38,21 +38,21 @@ import java.util.Objects;
 import java.util.Optional;
 
 @Slf4j
-public class BucketKeySaver implements OpContext.OpContextVisitor<Void> {
-    private static final String OPERATION_NOT_SUPPORTED = " operation not supported";
-    private final BucketIdExtractor<String> bucketIdExtractor;
+public class BucketKeyPersistor implements OpContext.OpContextVisitor<Void> {
+
     private final String tenantId;
+    private final BucketIdExtractor<String> bucketIdExtractor;
     private final Map<String, EntityMeta> initialisedEntityMeta;
 
-    public BucketKeySaver(final BucketIdExtractor<String> bucketIdExtractor,
-                          final String tenantId,
-                          final Map<String, EntityMeta> initialisedEntityMeta) {
-        Preconditions.checkArgument(!Objects.isNull(bucketIdExtractor), "bucketId Extractor must not be null");
+    public BucketKeyPersistor(final BucketIdExtractor<String> bucketIdExtractor,
+                              final String tenantId,
+                              final Map<String, EntityMeta> initialisedEntityMeta) {
+        Preconditions.checkArgument(!Objects.isNull(bucketIdExtractor), "BucketIdExtractor must not be null");
         Preconditions.checkArgument(!StringUtils.isEmpty(tenantId), "tenantId must not be empty");
         Preconditions.checkArgument(!MapUtils.isEmpty(initialisedEntityMeta), "initialisedEntityMeta must not" +
                 " be null or empty");
-        this.bucketIdExtractor = bucketIdExtractor;
         this.tenantId = tenantId;
+        this.bucketIdExtractor = bucketIdExtractor;
         this.initialisedEntityMeta = initialisedEntityMeta;
     }
 
@@ -122,7 +122,7 @@ public class BucketKeySaver implements OpContext.OpContextVisitor<Void> {
                 });
                 break;
             default:
-                throw new UnsupportedOperationException(contextMode + OPERATION_NOT_SUPPORTED);
+                throw new UnsupportedOperationException("Operation not supported for mode " + contextMode);
         }
         return null;
     }

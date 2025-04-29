@@ -8,16 +8,17 @@ import java.util.function.Supplier;
 
 @Slf4j
 public class BucketKeyObserver extends TransactionObserver {
-    private final BucketKeySaver bucketKeySaver;
 
-    public BucketKeyObserver(final BucketKeySaver bucketKeySaver) {
+    private final BucketKeyPersistor bucketKeyPersistor;
+
+    public BucketKeyObserver(final BucketKeyPersistor bucketKeyPersistor) {
         super(null);
-        this.bucketKeySaver = bucketKeySaver;
+        this.bucketKeyPersistor = bucketKeyPersistor;
     }
 
     @Override
     public <T> T execute(TransactionExecutionContext context, Supplier<T> supplier) {
-        context.getOpContext().visit(this.bucketKeySaver);
+        context.getOpContext().visit(this.bucketKeyPersistor);
         return proceed(context, supplier);
     }
 

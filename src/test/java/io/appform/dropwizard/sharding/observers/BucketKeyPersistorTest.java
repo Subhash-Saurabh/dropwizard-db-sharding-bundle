@@ -16,7 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-public class BucketKeySaverTest extends BundleBasedTestBase {
+public class BucketKeyPersistorTest extends BundleBasedTestBase {
 
     private static final String shardingKey = "PV10";
     private static final String childValue = "CV10";

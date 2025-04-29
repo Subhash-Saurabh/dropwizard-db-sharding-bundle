@@ -12,6 +12,7 @@ import io.appform.dropwizard.sharding.sharding.InMemoryLocalShardBlacklistingSto
 import io.appform.dropwizard.sharding.sharding.LookupKey;
 import io.appform.dropwizard.sharding.sharding.ShardBlacklistingStore;
 import io.appform.dropwizard.sharding.sharding.ShardingKey;
+import io.appform.dropwizard.sharding.sharding.EntityMeta;
 import io.dropwizard.Configuration;
 import io.dropwizard.ConfiguredBundle;
 import lombok.extern.slf4j.Slf4j;
@@ -46,13 +47,13 @@ public abstract class BundleCommonBase<T extends Configuration> implements Confi
 
   protected final List<Class<?>> initialisedEntities;
 
-  protected final Map<String, EntityMeta> initialisedEntityMeta = Maps.newHashMap();
+  protected final Map<String, EntityMeta> initialisedEntitiesMeta = Maps.newHashMap();
 
   protected TransactionObserver rootObserver;
 
   protected BundleCommonBase(Class<?> entity, Class<?>... entities) {
     this.initialisedEntities = ImmutableList.<Class<?>>builder().add(entity).add(entities).build();
-    validateInitialisedEntitiesAndBuildMetaCache(initialisedEntities);
+    validateAndBuildEntitiesMeta(initialisedEntities);
   }
 
   protected BundleCommonBase(List<String> classPathPrefixList) {
@@ -62,54 +63,7 @@ public abstract class BundleCommonBase<T extends Configuration> implements Confi
         String.format("No entity class found at %s",
             String.join(",", classPathPrefixList)));
     this.initialisedEntities = ImmutableList.<Class<?>>builder().addAll(entities).build();
-    validateInitialisedEntitiesAndBuildMetaCache(initialisedEntities);
-  }
-
-  private void validateInitialisedEntitiesAndBuildMetaCache(final List<Class<?>> initialisedEntities) {
-    initialisedEntities.forEach(clazz -> {
-      val bucketKeyField = resolveFieldFromEntity(clazz, BucketKey.class,
-              (t) -> validateAndResolveField(t, BucketKey.class.getSimpleName(), Integer.class));
-
-      if (Objects.isNull(bucketKeyField)) {
-        return;
-      }
-
-      val lookupKeyField = resolveFieldFromEntity(clazz, LookupKey.class,
-              (t) -> validateAndResolveField(t, LookupKey.class.getSimpleName(), String.class));
-
-      val shardingKeyField = resolveFieldFromEntity(clazz, ShardingKey.class,
-              (t) -> validateAndResolveField(t, ShardingKey.class.getSimpleName(), String.class));
-
-      if (Objects.isNull(shardingKeyField) && Objects.isNull(lookupKeyField) ) {
-        throw new RuntimeException("ShardingKey or LookupKey must be present if bucketKey is present");
-      }
-
-      val entityMeta = EntityMeta.builder()
-              .bucketKeyField(bucketKeyField)
-              .shardingKeyField(Objects.isNull(shardingKeyField) ? lookupKeyField : shardingKeyField)
-              .build();
-      initialisedEntityMeta.put(clazz.getName(), entityMeta);
-    });
-  }
-
-  private Field validateAndResolveField(final Field[] fields,
-                                        final String fieldType,
-                                        final Class<?> acceptableClass) {
-    if(fields.length == 0) {
-      return null;
-    }
-    Preconditions.checkArgument(fields.length == 1, String.format("Only one field can be designated " +
-            "as @%s", fieldType));
-    val keyField = fields[0];
-    Preconditions.checkArgument(ClassUtils.isAssignable(keyField.getType(), acceptableClass),
-            String.format("Key field must be of acceptable Type: %s", acceptableClass));
-    return keyField;
-  }
-
-  private Field resolveFieldFromEntity(Class<?> clazz, Class<? extends Annotation> annotationClazz,
-                                       Function<Field[], Field> validateAndResolve) {
-    val keyFields = FieldUtils.getFieldsWithAnnotation(clazz, annotationClazz);
-    return validateAndResolve.apply(keyFields);
+    validateAndBuildEntitiesMeta(initialisedEntities);
   }
 
   protected ShardBlacklistingStore getBlacklistingStore() {
@@ -210,5 +164,49 @@ public abstract class BundleCommonBase<T extends Configuration> implements Confi
     } else {
       encryptorRegistry.registerPBEByteEncryptor("encryptedBinary", strongEncryptor);
     }
+  }
+
+  private void validateAndBuildEntitiesMeta(final List<Class<?>> initialisedEntities) {
+    initialisedEntities.forEach(clazz -> {
+      val bucketKeyField = resolveFieldFromEntity(clazz, BucketKey.class,
+              entity -> validateAndResolveField(entity, BucketKey.class.getSimpleName(), Integer.class));
+      if (Objects.isNull(bucketKeyField)) {
+        return;
+      }
+
+      val lookupKeyField = resolveFieldFromEntity(clazz, LookupKey.class,
+              entity -> validateAndResolveField(entity, LookupKey.class.getSimpleName(), String.class));
+      val shardingKeyField = resolveFieldFromEntity(clazz, ShardingKey.class,
+              entity -> validateAndResolveField(entity, ShardingKey.class.getSimpleName(), String.class));
+      if (Objects.isNull(shardingKeyField) && Objects.isNull(lookupKeyField) ) {
+        throw new RuntimeException("ShardingKey or LookupKey must be present if bucketKey is present");
+      }
+
+      val entityMeta = EntityMeta.builder()
+              .bucketKeyField(bucketKeyField)
+              .shardingKeyField(Objects.isNull(shardingKeyField) ? lookupKeyField : shardingKeyField)
+              .build();
+      initialisedEntitiesMeta.put(clazz.getName(), entityMeta);
+    });
+  }
+
+  private Field validateAndResolveField(final Field[] fields,
+                                        final String fieldType,
+                                        final Class<?> acceptableClass) {
+    if(fields.length == 0) {
+      return null;
+    }
+    Preconditions.checkArgument(fields.length == 1, String.format("Only one field can be designated " +
+            "as @%s", fieldType));
+    val keyField = fields[0];
+    Preconditions.checkArgument(ClassUtils.isAssignable(keyField.getType(), acceptableClass),
+            String.format("Key field must be of acceptable Type: %s", acceptableClass));
+    return keyField;
+  }
+
+  private Field resolveFieldFromEntity(Class<?> clazz, Class<? extends Annotation> annotationClazz,
+                                       Function<Field[], Field> validateAndResolve) {
+    val keyFields = FieldUtils.getFieldsWithAnnotation(clazz, annotationClazz);
+    return validateAndResolve.apply(keyFields);
   }
 }
