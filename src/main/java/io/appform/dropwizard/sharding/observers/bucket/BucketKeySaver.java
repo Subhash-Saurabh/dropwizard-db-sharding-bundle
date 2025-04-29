@@ -37,15 +37,15 @@ import java.util.Objects;
 import java.util.Optional;
 
 @Slf4j
-public class BucketIdSaver implements OpContext.OpContextVisitor<Void> {
+public class BucketKeySaver implements OpContext.OpContextVisitor<Void> {
     private static final String OPERATION_NOT_SUPPORTED = " operation not supported";
     private final BucketIdExtractor<String> bucketIdExtractor;
     private final String tenantId;
     private final Map<String, EntityMeta> initialisedEntityMeta;
 
-    public BucketIdSaver(final BucketIdExtractor<String> bucketIdExtractor,
-                         final String tenantId,
-                         final Map<String, EntityMeta> initialisedEntityMeta) {
+    public BucketKeySaver(final BucketIdExtractor<String> bucketIdExtractor,
+                          final String tenantId,
+                          final Map<String, EntityMeta> initialisedEntityMeta) {
         Preconditions.checkArgument(!Objects.isNull(bucketIdExtractor), "bucketId Extractor must not be null");
         Preconditions.checkArgument(!StringUtils.isEmpty(tenantId), "tenantId must not be empty");
         this.bucketIdExtractor = bucketIdExtractor;
@@ -269,6 +269,10 @@ public class BucketIdSaver implements OpContext.OpContextVisitor<Void> {
         }
 
         val entitymeta = initialisedEntityMeta.get(entity.getClass().getName());
+        if (Objects.isNull(entitymeta)) {
+            return;
+        }
+
         val bucketKeyField = entitymeta.getBucketKeyField();
         val shardingKeyField = entitymeta.getShardingKeyField();
         if (Objects.isNull(bucketKeyField) || Objects.isNull(shardingKeyField)) {

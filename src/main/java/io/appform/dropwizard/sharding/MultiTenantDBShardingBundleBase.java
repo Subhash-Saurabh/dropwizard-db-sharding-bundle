@@ -36,8 +36,8 @@ import io.appform.dropwizard.sharding.dao.WrapperDao;
 import io.appform.dropwizard.sharding.healthcheck.HealthCheckManager;
 import io.appform.dropwizard.sharding.metrics.TransactionMetricManager;
 import io.appform.dropwizard.sharding.metrics.TransactionMetricObserver;
-import io.appform.dropwizard.sharding.observers.bucket.BucketIdObserver;
-import io.appform.dropwizard.sharding.observers.bucket.BucketIdSaver;
+import io.appform.dropwizard.sharding.observers.bucket.BucketKeyObserver;
+import io.appform.dropwizard.sharding.observers.bucket.BucketKeySaver;
 import io.appform.dropwizard.sharding.observers.internal.FilteringObserver;
 import io.appform.dropwizard.sharding.observers.internal.ListenerTriggeringObserver;
 import io.appform.dropwizard.sharding.observers.internal.TerminalTransactionObserver;
@@ -55,7 +55,6 @@ import io.dropwizard.setup.Environment;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import lombok.val;
-import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.collections.MapUtils;
 import org.hibernate.SessionFactory;
 
@@ -177,7 +176,7 @@ public abstract class MultiTenantDBShardingBundleBase<T extends Configuration> e
     if (!MapUtils.isEmpty(initialisedEntityMeta)) {
       // Only initialise if we have initialisedEntityMeta.
       // This won't be present in case bucketKey field itself is not present, so no need to apply this observer
-      rootObserver =  new BucketIdObserver(new BucketIdSaver(new ConsistentHashBucketIdExtractor<>(shardManagers),
+      rootObserver =  new BucketKeyObserver(new BucketKeySaver(new ConsistentHashBucketIdExtractor<>(shardManagers),
               tenantId, initialisedEntityMeta)).setNext(rootObserver);
     }
     rootObserver = new ListenerTriggeringObserver(rootObserver).addListeners(

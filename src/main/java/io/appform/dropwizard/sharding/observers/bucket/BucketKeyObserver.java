@@ -1,6 +1,5 @@
 package io.appform.dropwizard.sharding.observers.bucket;
 
-import com.google.common.base.Preconditions;
 import io.appform.dropwizard.sharding.execution.TransactionExecutionContext;
 import io.appform.dropwizard.sharding.observers.TransactionObserver;
 import lombok.extern.slf4j.Slf4j;
@@ -8,17 +7,17 @@ import lombok.extern.slf4j.Slf4j;
 import java.util.function.Supplier;
 
 @Slf4j
-public class BucketIdObserver extends TransactionObserver {
-    private final BucketIdSaver bucketIdSaver;
+public class BucketKeyObserver extends TransactionObserver {
+    private final BucketKeySaver bucketKeySaver;
 
-    public BucketIdObserver(final BucketIdSaver bucketIdSaver) {
+    public BucketKeyObserver(final BucketKeySaver bucketKeySaver) {
         super(null);
-        this.bucketIdSaver = bucketIdSaver;
+        this.bucketKeySaver = bucketKeySaver;
     }
 
     @Override
     public <T> T execute(TransactionExecutionContext context, Supplier<T> supplier) {
-        context.getOpContext().visit(this.bucketIdSaver);
+        context.getOpContext().visit(this.bucketKeySaver);
         return proceed(context, supplier);
     }
 
