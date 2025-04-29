@@ -37,10 +37,11 @@ import io.appform.dropwizard.sharding.healthcheck.HealthCheckManager;
 import io.appform.dropwizard.sharding.metrics.TransactionMetricManager;
 import io.appform.dropwizard.sharding.metrics.TransactionMetricObserver;
 import io.appform.dropwizard.sharding.observers.bucket.BucketKeyObserver;
-import io.appform.dropwizard.sharding.observers.bucket.BucketKeySaver;
+import io.appform.dropwizard.sharding.observers.bucket.BucketKeyPersistor;
 import io.appform.dropwizard.sharding.observers.internal.FilteringObserver;
 import io.appform.dropwizard.sharding.observers.internal.ListenerTriggeringObserver;
 import io.appform.dropwizard.sharding.observers.internal.TerminalTransactionObserver;
+import io.appform.dropwizard.sharding.sharding.EntityMeta;
 import io.appform.dropwizard.sharding.sharding.ShardBlacklistingStore;
 import io.appform.dropwizard.sharding.sharding.ShardManager;
 import io.appform.dropwizard.sharding.sharding.impl.ConsistentHashBucketIdExtractor;
@@ -159,16 +160,16 @@ public abstract class MultiTenantDBShardingBundleBase<T extends Configuration> e
       this.sessionFactories.put(tenantId, sessionFactory);
       this.shardingOptions.put(tenantId, shardingOption);
       healthCheckManager.manageHealthChecks(shardConfig.getBlacklist(), environment);
-      setupObservers(shardConfig.getMetricConfig(), environment.metrics(), this.shardManagers, tenantId, initialisedEntityMeta);
+      setupObservers(tenantId, shardConfig.getMetricConfig(), environment.metrics(), this.shardManagers, initialisedEntitiesMeta);
       environment.admin().addTask(new BlacklistShardTask(tenantId, shardManager));
       environment.admin().addTask(new UnblacklistShardTask(tenantId, shardManager));
     });
   }
 
-  private void setupObservers(final MetricConfig metricConfig,
+  private void setupObservers(final String tenantId,
+                              final MetricConfig metricConfig,
                               final MetricRegistry metricRegistry,
                               final Map<String, ShardManager> shardManagers,
-                              final String tenantId,
                               final Map<String, EntityMeta> initialisedEntityMeta) {
     //Observer chain starts with filters and ends with listener invocations
     //Terminal observer calls the actual method
@@ -176,7 +177,7 @@ public abstract class MultiTenantDBShardingBundleBase<T extends Configuration> e
     if (!MapUtils.isEmpty(initialisedEntityMeta)) {
       // Only initialise if we have initialisedEntityMeta.
       // This won't be present in case bucketKey field itself is not present, so no need to apply this observer
-      rootObserver =  new BucketKeyObserver(new BucketKeySaver(new ConsistentHashBucketIdExtractor<>(shardManagers),
+      rootObserver = new BucketKeyObserver(new BucketKeyPersistor(new ConsistentHashBucketIdExtractor<>(shardManagers),
               tenantId, initialisedEntityMeta)).setNext(rootObserver);
     }
     rootObserver = new ListenerTriggeringObserver(rootObserver).addListeners(
